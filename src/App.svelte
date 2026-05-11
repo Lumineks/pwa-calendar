@@ -1,15 +1,39 @@
 <script lang="ts">
   import { token } from './state/auth.ts';
   import { Router, Route, navigate } from 'svelte-routing';
-  import { startOfISOWeek, format } from 'date-fns';
+  import { parseISO, isValid, startOfISOWeek, format } from 'date-fns';
   import TokenGate from './routes/TokenGate.svelte';
   import WeekView from './routes/WeekView.svelte';
   import DayView from './routes/DayView.svelte';
 
-  // If loading at root path, update history.location before Router mounts so it
-  // initializes at the correct week URL (Router reads history.location on creation).
-  if (typeof window !== 'undefined' && window.location.pathname === '/') {
-    navigate(`/week/${format(startOfISOWeek(new Date()), 'yyyy-MM-dd')}`, { replace: true });
+  // Validate and fix the URL before the Router mounts so it always initializes
+  // on a good path. Router reads history.location on creation, so mutations here
+  // are visible on its first pass — unlike $effect redirects which run after
+  // mount and leave the Router pinned to the old (bad) match.
+  if (typeof window !== 'undefined') {
+    const currentIsoMonday = format(startOfISOWeek(new Date()), 'yyyy-MM-dd');
+    const SEG_RE = /^\d{4}-\d{2}-\d{2}$/;
+    const pathname = window.location.pathname;
+
+    if (pathname === '/') {
+      navigate(`/week/${currentIsoMonday}`, { replace: true });
+    } else {
+      const dayMatch = /^\/day\/([^/]+)$/.exec(pathname);
+      if (dayMatch) {
+        const seg = dayMatch[1] ?? '';
+        if (!SEG_RE.test(seg) || !isValid(parseISO(seg))) {
+          navigate(`/week/${currentIsoMonday}`, { replace: true });
+        }
+      } else {
+        const weekMatch = /^\/week\/([^/]+)$/.exec(pathname);
+        if (weekMatch) {
+          const seg = weekMatch[1] ?? '';
+          if (!SEG_RE.test(seg) || !isValid(parseISO(seg))) {
+            navigate(`/week/${currentIsoMonday}`, { replace: true });
+          }
+        }
+      }
+    }
   }
 </script>
 

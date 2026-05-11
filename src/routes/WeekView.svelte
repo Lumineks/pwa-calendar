@@ -24,22 +24,6 @@
 
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-  function todayIsoMonday(): string {
-    return format(startOfISOWeek(new Date()), 'yyyy-MM-dd');
-  }
-
-  /**
-   * Per PLAN.md: "If isoMonday is missing or doesn't parse, navigate to
-   * /week/<current-iso-monday> with replace:true and return." We honor that
-   * literally by running the check in an effect that fires on every prop
-   * change, then guarding the main render below.
-   */
-  $effect(() => {
-    if (!isoMonday || !DATE_RE.test(isoMonday) || !isValid(parseISO(isoMonday))) {
-      navigate(`/week/${todayIsoMonday()}`, { replace: true });
-    }
-  });
-
   const validInput = $derived(
     !!isoMonday && DATE_RE.test(isoMonday) && isValid(parseISO(isoMonday)),
   );

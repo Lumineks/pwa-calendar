@@ -43,19 +43,9 @@
 
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-  function todayIsoMonday(): string {
-    return format(startOfISOWeek(new Date()), 'yyyy-MM-dd');
-  }
-
   const validInput = $derived(
     !!date && DATE_RE.test(date) && isValid(parseISO(date)),
   );
-
-  $effect(() => {
-    if (!date || !DATE_RE.test(date) || !isValid(parseISO(date))) {
-      navigate(`/week/${todayIsoMonday()}`, { replace: true });
-    }
-  });
 
   // Derivations that depend on a (validated) date.
   const parsed = $derived(validInput ? parseISO(date) : new Date());
