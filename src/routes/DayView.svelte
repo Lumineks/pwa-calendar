@@ -287,11 +287,7 @@
     width: 100%;
     box-sizing: border-box;
     margin: 0;
-    padding:
-      9px
-      18px
-      calc(env(safe-area-inset-bottom, 0px) + 16px)
-      18px;
+    padding: 3px 18px 0 18px;
     border: 0;
     outline: 0;
     color: #2c2412;

@@ -281,13 +281,15 @@
   .day-row {
     position: relative;
     flex: 1 1 0;
-    display: block;
+    display: flex;
     width: 100%;
     min-height: calc(var(--paper-line-height) * 3 + 12px);
     background: transparent;
     border: none;
     border-top: 1px dashed rgba(70, 60, 35, 0.12);
-    padding: 10px 14px 10px 14px;
+    /*padding: 10px 14px 10px 14px;*/
+
+    padding: 0;
     text-align: left;
     cursor: pointer;
     font: inherit;
@@ -327,12 +329,8 @@
     color: #2c2412;
     font-family: 'Georgia', 'Times New Roman', ui-serif, serif;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
     overflow: hidden;
-    white-space: pre-wrap;
-    word-break: break-word;
+    white-space: pre-line;
   }
 
   .preview-half {
