@@ -23,6 +23,9 @@ todos:
   - id: phase-4.5
     content: "Phase 4.5 [sonnet-4.6] — Frontend bugfix micro-phase (added by Audit 1): enable allowImportingTsExtensions so npm run check passes; centralize date validation in App.svelte so direct visits to /day/<garbage> or /week/<garbage> no longer blank the page"
     status: pending
+  - id: phase-4.6
+    content: "Phase 4.6 [sonnet-4.6] — WeekView visual polish: vertical day separation (paper cards with gradient gaps) + denser lines (20 px rhythm, 13 px preview text, recalibrated DayView padding-top) (added by user after Audit 1)"
+    status: pending
   - id: phase-5
     content: "Phase 5 [sonnet-4.6] — Cloudflare Worker backend: one-time Cloudflare account + KV namespace + JOURNAL_TOKEN secret setup, implement /health + /entries (list & range) + /entries/:date (GET/PUT/DELETE) with bearer-token auth + strict CORS + LWW PUT semantics, deploy, curl smoke test"
     status: pending
@@ -77,6 +80,7 @@ Per-phase model selection. Rationale:
 | 4 — DayView UI          | sonnet-4.6   | Simpler than WeekView; mostly textarea + auto-save.                                           |
 | **Audit 1**             | **opus-4.7** | Compares the running local-only MVP to AGENTS.md and rewrites the remaining plan if needed.   |
 | 4.5 — FE bugfixes       | sonnet-4.6   | Two tiny, isolated fixes called out by Audit 1 (tsconfig flag + Router redirect bug). Added by Audit 1. |
+| 4.6 — Visual polish     | sonnet-4.6   | Two isolated CSS changes: card-per-day vertical separation + denser line rhythm. Low ambiguity; pure CSS + template. Added by user after Audit 1. |
 | 5 — Worker backend      | sonnet-4.6   | Well-defined API surface, ~150 LOC of TS.                                                     |
 | 6 — Sync layer          | **opus-4.7** | LWW + dirty-set + backoff + pull loop is the trickiest logic in the app.                      |
 | **Audit 2**             | **opus-4.7** | Validates that sync is actually correct on two devices before locking in PWA & deploy phases. |
@@ -183,7 +187,8 @@ flowchart LR
   P3 --> P4[Phase 4<br/>DayView]
   P4 --> A1{Audit 1}
   A1 --> P45[Phase 4.5<br/>FE bugfixes]
-  P45 --> P5[Phase 5<br/>Worker]
+  P45 --> P46[Phase 4.6<br/>Visual polish]
+  P46 --> P5[Phase 5<br/>Worker]
   P5 --> P6[Phase 6<br/>Sync]
   P6 --> A2{Audit 2}
   A2 --> P7[Phase 7<br/>PWA]
@@ -509,6 +514,64 @@ small subtraction from `DayView.svelte` and `WeekView.svelte`. No new files.
 - `/day/<garbage>` and `/week/<garbage>` direct visits render WeekView for the
   current ISO Monday immediately, without manual reload.
 - No regression in the eight scenarios from `audits/audit-1.md`.
+
+---
+
+## Phase 4.6 — WeekView visual polish: vertical day separation + denser lines [sonnet-4.6]
+
+**Goal.** Two self-contained visual changes that bring the WeekView closer to the reference image without touching the data layer or routing: (A) each weekday reads as its own paper card with the warm gradient showing through between cards, and (B) a tighter 20 px line rhythm with proportionally smaller preview text.
+
+**Why a separate phase.** These are pure CSS + template changes with no data-layer or routing risk. Adding them inside Phase 4.5 would have mixed two unrelated concerns; adding them inside Phase 5 (worker-only) would have wasted context budget. Keeping them isolated also makes it easy to revert or iterate visually without touching backend code. Added at user request after Audit 1.
+
+**Prerequisites.** Phases 0–4 + Audit 1 + Phase 4.5.
+
+**Reads.** `AGENTS.md` (Visual fidelity target, Functional scope), `PLAN.md` (Phase 4 textarea-calibration story, Phase 4.5 section), `audits/audit-1.md` (Visual fit table, Audit 1 acceptance-criteria scenarios a–h), commit `a54521c` (`git show a54521c`), the reference image (`assets/image-cb5873ec-2234-48d4-acd7-1ab9f3856dfc.png`), `src/styles/paper.css`, `src/routes/WeekView.svelte`, `src/routes/DayView.svelte`.
+
+**Tasks.**
+
+1. **`src/styles/paper.css`** — two changes:
+   - Set `--paper-line-height` to `20px` (down from 27 px). 19 px is allowed if multi-line Russian text in DayView does not visually overlap and the cursor caret does not extend above the rule; otherwise default to 20 px.
+   - Strip `background-color`, `box-shadow`, and `border` from `.spiral-page`. It becomes a layout-only marker (`position: relative` only). The `.paper` class retains the full lined background and remains the sole source of the paper aesthetic.
+
+2. **`src/routes/WeekView.svelte` — template**: remove the `.paper` class from both `<section class="page … spiral-page paper">` elements. Add the `.paper` class to each `<button class="day-row …">` and each `<button class="day-half …">`. The `<div class="day-row split-row …">` is a layout-only container and does not receive `.paper` — only its two `.day-half` button children do.
+
+3. **`src/routes/WeekView.svelte` — styles**:
+   - `.page`: add `gap: 8px` to create visible gradient gutters between rows on each page. This is the primary vertical-separation mechanism.
+   - `.day-row`: remove `background: transparent` (the paper class now supplies the fill). Remove `border-top` (gaps replace the dashed separator). Add `border-radius: 3px`. Add a very subtle `box-shadow: 0 1px 3px rgba(70,60,35,0.08)` to suggest individual sheets without making them look like floating cards on a desk. Keep `overflow: visible` so tabs extend outside the card.
+   - `.day-row:first-child` remove-border-top rule: delete (no longer needed).
+   - `.split-row`: add `gap: 8px` to separate the Sat and Sun halves with the same gutter as full rows.
+   - `.day-half`: remove `background: transparent`, remove `border-top`, add `border-radius: 3px`. Set `padding: 0` to match `.day-row`'s padding (content is positioned by the inner `.preview` margins).
+   - `.day-half:first-child` remove-border-top rule: delete.
+   - `.preview`: reduce `font-size` from `14.5px` to `13px`. Keep `line-height: var(--paper-line-height)` and `white-space: pre-line`.
+
+4. **`src/routes/DayView.svelte`** — recalibrate `padding-top` in `.editor` for the new `20px` line-height:
+   - Hard constraint: `font-size` stays exactly `16px`.
+   - The paper rule is painted at `y = 19px` from the element top in each 20 px tile. For Georgia 16 px in a 20 px line-box the baseline sits approximately 16 px from the line-box top (half-leading ≈ 2 px, ascender ≈ 14 px). So `padding-top = 19 − 16 ≈ 3 px`. Start at `3px` and confirm visually with a screenshot of multi-line Russian text; adjust by 1 px steps if needed.
+   - Update the inline comment block above `.editor` to document the new values and reasoning.
+   - Do not touch the `background` shorthand guard comment.
+
+5. **Visual verification** at iPhone-14 emulated dimensions (390 × 844) via `cursor-ide-browser` MCP:
+   - WeekView screenshot: confirm gradient gaps, paper rules, tabs attached.
+   - Insert 6-line Russian entry via devtools one-liner. Reload. WeekView screenshot showing unlocked multi-line preview.
+   - DayView screenshot with 6+ typed lines confirming no overlap and baselines on the rules.
+   - Side-by-side delta note vs. the reference image.
+
+6. **Final sweep**: `npm run check` (must exit 0), `npm run build` (must succeed), re-walk Audit 1 acceptance-criteria scenarios a–h in the browser.
+
+**Deliverable.** Four changed files: `PLAN.md`, `src/styles/paper.css`, `src/routes/WeekView.svelte`, `src/routes/DayView.svelte`. Single commit `feat: phase 4.6 — vertical day separation + denser lines`.
+
+**Acceptance criteria.**
+
+1. Visible vertical gradient gaps between Mon/Tue/Wed on the left page and between Thu/Fri/split-row on the right page. Screenshot at iPhone-14 (390 × 844).
+2. Sat/Sun split row has the same gutter between the Sat half and the Sun half.
+3. Each day-card shows visible paper rules.
+4. Day tabs still attach to the outer edge of their own row; today's tab still highlighted.
+5. WeekView preview text is ~13 px serif and clearly shows more lines per card than at the previous size.
+6. DayView editor font-size is exactly `16px` (confirmed via source file).
+7. DayView typed lines sit on the paper rules. Screenshot of 6+ Russian lines confirming no overlap and baselines on the rules.
+8. `npm run check` exits 0.
+9. `npm run build` succeeds.
+10. Audit 1 scenarios a–h still pass.
 
 ---
 

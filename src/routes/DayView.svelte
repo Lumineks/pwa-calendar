@@ -267,20 +267,18 @@
   /* Textarea — the heart of Phase 4.
    *
    *   line-height: var(--paper-line-height)
-   *       Each typed line occupies exactly one paper-line slice (28px by
-   *       default), so subsequent lines stay aligned to the rules.
+   *       Each typed line occupies exactly one paper-line slice. Phase 4.6
+   *       tightened this to 20px (from 27px) for a denser ruled rhythm.
    *
-   *   font-size: 16px
-   *       The iOS Safari auto-zoom floor. Anything smaller triggers a zoom
-   *       on focus on mobile Safari. 16px also pairs visually with 28px
-   *       (1.75 line-height ratio).
+   *   font-size: 16px  ← MUST NOT be lowered.
+   *       The iOS Safari auto-zoom floor. Anything below 16px triggers a
+   *       pinch-zoom on focus in mobile Safari. Locked by Phase 4.
    *
-   *   padding-top: 9px
-   *       Calibrated so the first text baseline sits on the first paper
-   *       rule. The paper background paints the rule at y=27 of each 28px
-   *       slice; with line-height: 28px and a 16px system-ui font the
-   *       baseline sits ~18px from the line-box top, so a 9px push aligns
-   *       it with the rule.
+   *   padding-top: 3px  (Phase 4.6 recalibration)
+   *       The paper rule is at y=19px in each 20px tile. For Georgia 16px
+   *       in a 20px line-box: half-leading ≈ 2px, ascender ≈ 14px →
+   *       baseline from line-box top ≈ 16px. padding-top = 19 − 16 = 3px.
+   *       Verified visually: 6+ typed Russian lines sit on their rules.
    */
   .editor {
     flex: 1 1 auto;

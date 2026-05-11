@@ -5,7 +5,9 @@
  * the DayView textarea so user-typed text sits exactly on these lines. */
 
 :root {
-  --paper-line-height: 27px;
+  /* Phase 4.6: tightened from 27px → 20px for a denser ruled-paper rhythm.
+   * DayView's .editor padding-top is recalibrated alongside this change. */
+  --paper-line-height: 20px;
   --paper-fill: #fbf6e9;
   --paper-line: rgba(73, 86, 110, 0.22);
   --paper-margin-rule: rgba(196, 60, 60, 0.55);
@@ -51,12 +53,10 @@
   background-color: var(--paper-fill);
 }
 
-/* Marks each of the two page halves in the weekly spread. The class is
- * intentionally minimal — it only contributes the paper-feel shadow and a
- * subtle border. Layout (flex, sizing) lives on the spread container. */
+/* Marks each of the two page halves in the weekly spread.
+ * Phase 4.6: background, shadow, and border removed. Each .day-row / .day-half
+ * now carries the .paper class directly so the warm gradient shows through the
+ * gaps between cards. This class is now a layout-only marker. */
 .spiral-page {
   position: relative;
-  background-color: var(--paper-fill);
-  box-shadow: var(--paper-edge-shadow);
-  border: 1px solid rgba(70, 60, 35, 0.08);
 }

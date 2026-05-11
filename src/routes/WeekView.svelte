@@ -94,7 +94,7 @@
 
     <div class="spread">
       <!-- LEFT PAGE: Mon, Tue, Wed -->
-      <section class="page page-left spiral-page paper">
+      <section class="page page-left spiral-page">
         {#each [days[0], days[1], days[2]] as d, idx (dateKey(d!))}
           {@const key = dateKey(d!)}
           {@const today_ = isSameDay(d!, today)}
@@ -102,6 +102,7 @@
           <button
             class={[
               'day-row',
+              'paper',
               'side-left',
               idx === 2 && 'is-last',
             ]}
@@ -120,9 +121,9 @@
       <SpiralBinding count={26} />
 
       <!-- RIGHT PAGE: Thu, Fri, then split row of Sat + Sun -->
-      <section class="page page-right spiral-page paper">
+      <section class="page page-right spiral-page">
         <button
-          class="day-row side-right"
+          class="day-row paper side-right"
           type="button"
           onclick={() => openDay(dateKey(days[3]!))}
           aria-label={`Открыть день ${dateKey(days[3]!)}`}
@@ -139,7 +140,7 @@
         </button>
 
         <button
-          class="day-row side-right"
+          class="day-row paper side-right"
           type="button"
           onclick={() => openDay(dateKey(days[4]!))}
           aria-label={`Открыть день ${dateKey(days[4]!)}`}
@@ -158,7 +159,7 @@
         <!-- Bottom row, split into Sat (top half) and Sun (bottom half) -->
         <div class="day-row split-row is-last">
           <button
-            class="day-half side-right"
+            class="day-half paper side-right"
             type="button"
             onclick={() => openDay(dateKey(days[5]!))}
             aria-label={`Открыть день ${dateKey(days[5]!)}`}
@@ -174,7 +175,7 @@
             <div class="preview preview-half" lang="ru">{bodies[dateKey(days[5]!)] ?? ''}</div>
           </button>
           <button
-            class="day-half side-right"
+            class="day-half paper side-right"
             type="button"
             onclick={() => openDay(dateKey(days[6]!))}
             aria-label={`Открыть день ${dateKey(days[6]!)}`}
@@ -257,6 +258,7 @@
     flex: 1 1 0;
     display: flex;
     flex-direction: column;
+    gap: 8px; /* visible warm-gradient gutter between day cards */
     min-height: 100%;
     border-radius: 4px;
     overflow: visible; /* tabs need to stick out */
@@ -278,17 +280,19 @@
    * card-area is clickable. overflow is left visible so the absolutely-
    * positioned tab can extend past the page edge; preview text is clamped
    * separately via -webkit-line-clamp. */
+  /* Phase 4.6: each row is now its own paper card. background comes from the
+   * global .paper class; the dashed border-top is replaced by the flex gap on
+   * .page. A barely-perceptible shadow suggests individual sheets without
+   * turning the spread into a floating-cards-on-a-desk look. */
   .day-row {
     position: relative;
     flex: 1 1 0;
     display: flex;
     width: 100%;
     min-height: calc(var(--paper-line-height) * 3 + 12px);
-    background: transparent;
     border: none;
-    border-top: 1px dashed rgba(70, 60, 35, 0.12);
-    /*padding: 10px 14px 10px 14px;*/
-
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(70, 60, 35, 0.08);
     padding: 0;
     text-align: left;
     cursor: pointer;
@@ -296,10 +300,6 @@
     color: inherit;
     box-sizing: border-box;
     overflow: visible;
-  }
-
-  .day-row:first-child {
-    border-top: none;
   }
 
   /* Slots position the tab outside the page rectangle. The tab extends 38px
@@ -325,7 +325,7 @@
     margin-right: 6px;
     padding-top: 2px;
     line-height: var(--paper-line-height);
-    font-size: 14.5px;
+    font-size: 13px;
     color: #2c2412;
     font-family: 'Georgia', 'Times New Roman', ui-serif, serif;
     display: -webkit-box;
@@ -344,18 +344,22 @@
   .split-row {
     display: flex;
     flex-direction: column;
+    gap: 8px; /* same gutter as between full rows */
     padding: 0;
     min-height: 0;
+    box-shadow: none; /* layout-only container, individual halves carry shadow */
   }
 
+  /* Phase 4.6: each half is a separate paper card (background from .paper).
+   * Dashed border-top replaced by gap on .split-row. */
   .day-half {
     position: relative;
     flex: 1 1 0;
     width: 100%;
-    background: transparent;
     border: none;
-    border-top: 1px dashed rgba(70, 60, 35, 0.12);
-    padding: 10px 14px;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(70, 60, 35, 0.08);
+    padding: 0;
     text-align: left;
     cursor: pointer;
     font: inherit;
@@ -364,13 +368,9 @@
     overflow: visible;
   }
 
-  .day-half:first-child {
-    border-top: none;
-  }
-
   @media (min-width: 700px) {
     .preview {
-      font-size: 15px;
+      font-size: 14px;
     }
   }
 </style>
