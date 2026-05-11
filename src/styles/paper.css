@@ -1,1 +1,62 @@
-/* paper.css — lined-paper background utilities (Phase 3) */
+/* paper.css — lined-paper background utilities (Phase 3).
+ *
+ * The single source of truth for the journal's vertical rhythm is the CSS
+ * custom property `--paper-line-height`. Phase 4 will reuse this variable on
+ * the DayView textarea so user-typed text sits exactly on these lines. */
+
+:root {
+  --paper-line-height: 28px;
+  --paper-fill: #fbf6e9;
+  --paper-line: rgba(73, 86, 110, 0.22);
+  --paper-margin-rule: rgba(196, 60, 60, 0.55);
+  --paper-edge-shadow: 0 1px 2px rgba(70, 60, 35, 0.08),
+    0 8px 24px rgba(70, 60, 35, 0.08);
+}
+
+/* Off-white paper background with thin horizontal rules drawn from the
+ * bottom of each line so that text with `line-height: var(--paper-line-height)`
+ * sits *on* the lines rather than between them. */
+.paper {
+  background-color: var(--paper-fill);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--paper-line-height) - 1px),
+    var(--paper-line) calc(var(--paper-line-height) - 1px),
+    var(--paper-line) var(--paper-line-height)
+  );
+  background-position: left top;
+  background-repeat: repeat;
+}
+
+/* Optional red margin rule (the classic notebook left-margin line). Drawn as
+ * a single vertical line via an additional layered gradient. Disabled by
+ * default; opt in with the `.paper-margin` class. */
+.paper-margin {
+  background-image:
+    linear-gradient(
+      to right,
+      transparent calc(var(--paper-line-height) * 1.4),
+      var(--paper-margin-rule) calc(var(--paper-line-height) * 1.4),
+      var(--paper-margin-rule) calc(var(--paper-line-height) * 1.4 + 1px),
+      transparent calc(var(--paper-line-height) * 1.4 + 1px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--paper-line-height) - 1px),
+      var(--paper-line) calc(var(--paper-line-height) - 1px),
+      var(--paper-line) var(--paper-line-height)
+    );
+  background-color: var(--paper-fill);
+}
+
+/* Marks each of the two page halves in the weekly spread. The class is
+ * intentionally minimal — it only contributes the paper-feel shadow and a
+ * subtle border. Layout (flex, sizing) lives on the spread container. */
+.spiral-page {
+  position: relative;
+  background-color: var(--paper-fill);
+  box-shadow: var(--paper-edge-shadow);
+  border: 1px solid rgba(70, 60, 35, 0.08);
+}
