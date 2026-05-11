@@ -20,6 +20,9 @@ todos:
   - id: audit-1
     content: "Audit checkpoint 1 [opus-4.7] — Review local-only MVP: run the app, compare to AGENTS.md, write audits/audit-1.md, update remaining phases in PLAN.md if needed"
     status: pending
+  - id: phase-4.5
+    content: "Phase 4.5 [sonnet-4.6] — Frontend bugfix micro-phase (added by Audit 1): enable allowImportingTsExtensions so npm run check passes; centralize date validation in App.svelte so direct visits to /day/<garbage> or /week/<garbage> no longer blank the page"
+    status: pending
   - id: phase-5
     content: "Phase 5 [sonnet-4.6] — Cloudflare Worker backend: one-time Cloudflare account + KV namespace + JOURNAL_TOKEN secret setup, implement /health + /entries (list & range) + /entries/:date (GET/PUT/DELETE) with bearer-token auth + strict CORS + LWW PUT semantics, deploy, curl smoke test"
     status: pending
@@ -73,6 +76,7 @@ Per-phase model selection. Rationale:
 | 3 — WeekView UI         | **opus-4.7** | Visual fidelity is the heart of the app; paper/spiral/tab CSS is non-trivial.                 |
 | 4 — DayView UI          | sonnet-4.6   | Simpler than WeekView; mostly textarea + auto-save.                                           |
 | **Audit 1**             | **opus-4.7** | Compares the running local-only MVP to AGENTS.md and rewrites the remaining plan if needed.   |
+| 4.5 — FE bugfixes       | sonnet-4.6   | Two tiny, isolated fixes called out by Audit 1 (tsconfig flag + Router redirect bug). Added by Audit 1. |
 | 5 — Worker backend      | sonnet-4.6   | Well-defined API surface, ~150 LOC of TS.                                                     |
 | 6 — Sync layer          | **opus-4.7** | LWW + dirty-set + backoff + pull loop is the trickiest logic in the app.                      |
 | **Audit 2**             | **opus-4.7** | Validates that sync is actually correct on two devices before locking in PWA & deploy phases. |
@@ -178,7 +182,8 @@ flowchart LR
   P2 --> P3[Phase 3<br/>WeekView]
   P3 --> P4[Phase 4<br/>DayView]
   P4 --> A1{Audit 1}
-  A1 --> P5[Phase 5<br/>Worker]
+  A1 --> P45[Phase 4.5<br/>FE bugfixes]
+  P45 --> P5[Phase 5<br/>Worker]
   P5 --> P6[Phase 6<br/>Sync]
   P6 --> A2{Audit 2}
   A2 --> P7[Phase 7<br/>PWA]
@@ -438,13 +443,84 @@ flowchart LR
 
 ---
 
+## Phase 4.5 — Frontend bugfix micro-phase [sonnet-4.6]
+
+**Goal.** Land the two small, isolated fixes identified by Audit 1 before the
+worker work begins: make `npm run check` green, and stop direct visits to an
+invalid `/day/<bad>` or `/week/<bad>` URL from blanking the page.
+
+**Why a separate phase.** Phase 5 is a worker-only session (it does not touch
+the frontend). These two frontend fixes are surgical and unrelated to the
+worker; bundling them avoids spending Phase 5's context on them.
+
+**Prerequisites.** Phases 0–4 + Audit 1.
+
+**Reads.** `AGENTS.md`, `PLAN.md`, `audits/audit-1.md`, `src/App.svelte`,
+`src/routes/DayView.svelte`, `src/routes/WeekView.svelte`, `tsconfig.app.json`.
+
+**Tasks.**
+
+1. **Fix svelte-check (Audit 1, Bug 1).** Open `tsconfig.app.json`. Add to
+   `compilerOptions`:
+
+   ```jsonc
+   "allowImportingTsExtensions": true
+   ```
+
+   No source files change. `noEmit: true` is already set, which is the
+   precondition for this flag.
+
+2. **Fix the blank-page bug (Audit 1, Bug 2).** Centralize date validation in
+   `src/App.svelte`, alongside the existing root-path redirect, so the
+   `<Router>` only ever mounts on a known-good URL.
+
+   - In `App.svelte`'s `<script>` block, **before** `<Router>` is rendered,
+     run a single validation pass against `window.location.pathname`:
+     - If pathname is `/`, redirect to `/week/<currentIsoMonday>` (existing
+       behavior — keep it).
+     - If pathname matches `^/day/([^/]+)$` and the captured segment is **not**
+       a valid `YYYY-MM-DD` date (regex + `date-fns/isValid(parseISO(...))`),
+       `navigate('/week/<currentIsoMonday>', { replace: true })`.
+     - If pathname matches `^/week/([^/]+)$` and the captured segment is **not**
+       a valid `YYYY-MM-DD` date, same redirect.
+     - All redirects happen before the `<Router>` mounts, so the Router reads
+       the corrected URL on its first pass.
+   - Then remove the per-component validation `$effect`s in `DayView.svelte`
+     and `WeekView.svelte` (the ones that call
+     `navigate(\`/week/${todayIsoMonday()}\`, { replace: true })`). Leave the
+     `validInput` derived + `{#if validInput}` guards in place defensively;
+     they cost nothing and protect against any future direct prop injection.
+
+3. **Re-walk a minimal acceptance check** end-to-end:
+   - `npm run check` is green.
+   - `npm run build` is still green.
+   - In the browser: open `/day/garbage` directly → URL changes to
+     `/week/<currentIsoMonday>` AND the WeekView renders without a reload.
+     Repeat for `/week/garbage`.
+   - Normal flows (TokenGate → WeekView → DayView → Назад → reload) still
+     behave exactly as Audit 1 captured.
+
+**Deliverable.** Two-file diff (`tsconfig.app.json` plus `src/App.svelte`) and a
+small subtraction from `DayView.svelte` and `WeekView.svelte`. No new files.
+
+**Acceptance criteria.**
+
+- `npm run check` exits 0 with no errors.
+- `/day/<garbage>` and `/week/<garbage>` direct visits render WeekView for the
+  current ISO Monday immediately, without manual reload.
+- No regression in the eight scenarios from `audits/audit-1.md`.
+
+---
+
 ## Phase 5 — Cloudflare Worker backend [sonnet-4.6]
 
 **Goal.** A deployed Cloudflare Worker exposing the API the frontend will sync against. Includes the one-time Cloudflare/KV/secret setup.
 
-**Prerequisites.** Phases 0–4 + Audit 1.
+**Prerequisites.** Phases 0–4 + Audit 1 + Phase 4.5.
 
-**Reads.** `AGENTS.md` (Worker API surface, KV shape, Auth model, CORS), `PLAN.md`.
+**Reads.** `AGENTS.md` (Worker API surface, KV shape, Auth model, CORS), `PLAN.md`, `audits/audit-1.md`.
+
+**Pre-task fixups.** Phase 4.5 must already be merged on `main` so `npm run check` is green; otherwise the curl smoke test at the end of this phase has no signal to compare against. If for any reason Phase 4.5 has been skipped, run its two tasks here first before scaffolding the worker.
 
 **Tasks.**
 
@@ -544,8 +620,9 @@ flowchart LR
     - On `window.addEventListener('online', ...)` → `push(); pull()`.
     - `setInterval(() => { if (document.visibilityState === 'visible' && navigator.onLine) { pull(); } }, 3 * 60 * 1000)`.
 5. Wire `App.svelte` (or a top-level `+layout`-equivalent component) to start the sync triggers exactly once after `token` becomes non-null. Tear down on `clearToken()`.
-6. `src/components/OnlineIndicator.svelte`: tiny dot + label in WeekView header. Russian text: "офлайн" when `!navigator.onLine`. Listens to `online`/`offline` events.
-7. Cross-device manual test:
+6. **DayView cleanup audit (added by Audit 1).** Revisit `DayView.svelte`'s body-load `$effect` cleanup. It currently calls `save.cancel()` on `date` change. Once `markDirty` is no longer a no-op, dropping a pending debounce on date change becomes a silent local + remote data loss for the previous date (the on-screen body has been edited but never persisted to Dexie, so the dirty set never picks it up). Replace `save.cancel()` with a flush keyed by the *previous* `date` and `body` — easiest: capture both inside the effect setup so the cleanup closure flushes them explicitly via `putEntry(prevDate, prevBody)` if `pendingSave` is true. Verify by typing in `/day/2026-05-11`, then changing the URL bar to `/day/2026-05-12` within the 300 ms debounce window: both dates should retain their text.
+7. `src/components/OnlineIndicator.svelte`: tiny dot + label in WeekView header. Russian text: "офлайн" when `!navigator.onLine`. Listens to `online`/`offline` events.
+8. Cross-device manual test:
   - Open the deployed `localhost:5173` build via your phone (or a second browser). Paste the same token.
   - Edit on device A, wait ~10s, observe on device B.
   - Take device A offline (devtools throttling), edit, come back online, observe device B receives the update within ~10s.
