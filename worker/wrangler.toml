@@ -1,0 +1,24 @@
+name = "journal-calendar"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+[[kv_namespaces]]
+binding = "JOURNAL"
+id = "e329d26f945e46c094a7bf982d8a5895"
+
+[vars]
+# Production CORS origin — update to your GitHub Pages URL in Phase 8
+# e.g. ALLOWED_ORIGIN = "https://<you>.github.io"
+ALLOWED_ORIGIN = "https://example.invalid"
+
+[env.dev]
+[env.dev.vars]
+ALLOWED_ORIGIN = "http://localhost:5173"
+
+# Dev uses the same KV namespace as production (single-user app; acceptable for v1).
+# If you want a separate preview namespace, create one with:
+#   npx wrangler kv namespace create JOURNAL --preview
+# and add a second [[env.dev.kv_namespaces]] block with preview_id.
+[[env.dev.kv_namespaces]]
+binding = "JOURNAL"
+id = "e329d26f945e46c094a7bf982d8a5895"

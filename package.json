@@ -8,8 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "worker:dev": "echo 'worker not yet scaffolded — Phase 5'",
-    "worker:deploy": "echo 'worker not yet scaffolded — Phase 5'"
+    "worker:dev": "npm --prefix worker run dev",
+    "worker:deploy": "npm --prefix worker run deploy"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
