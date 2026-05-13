@@ -7,7 +7,7 @@
 :root {
   /* Phase 4.6: tightened from 27px → 20px for a denser ruled-paper rhythm.
    * DayView's .editor padding-top is recalibrated alongside this change. */
-  --paper-line-height: 20px;
+  --paper-line-height: 18px;
   --paper-fill: #fbf6e9;
   --paper-line: rgba(73, 86, 110, 0.22);
   --paper-margin-rule: rgba(196, 60, 60, 0.55);

@@ -102,7 +102,6 @@
           <button
             class={[
               'day-row',
-              'paper',
               'side-left',
               idx === 2 && 'is-last',
             ]}
@@ -113,7 +112,9 @@
             <div class="tab-slot tab-slot-left">
               <DayTab date={key} isToday={today_} isWeekend={weekend_} side="left" />
             </div>
-            <div class="preview" lang="ru">{bodies[key] ?? ''}</div>
+            <div class="preview" lang="ru">
+              <div class="paper">{bodies[key] ?? ''}</div>
+            </div>
           </button>
         {/each}
       </section>
@@ -136,7 +137,9 @@
               side="right"
             />
           </div>
-          <div class="preview" lang="ru">{bodies[dateKey(days[3]!)] ?? ''}</div>
+          <div class="preview" lang="ru">
+            <div class="paper">{bodies[dateKey(days[3]!)] ?? ''}</div>
+          </div>
         </button>
 
         <button
@@ -153,7 +156,9 @@
               side="right"
             />
           </div>
-          <div class="preview" lang="ru">{bodies[dateKey(days[4]!)] ?? ''}</div>
+          <div class="preview" lang="ru">
+            <div class="paper">{bodies[dateKey(days[4]!)] ?? ''}</div>
+          </div>
         </button>
 
         <!-- Bottom row, split into Sat (top half) and Sun (bottom half) -->
@@ -172,7 +177,9 @@
                 side="right"
               />
             </div>
-            <div class="preview preview-half" lang="ru">{bodies[dateKey(days[5]!)] ?? ''}</div>
+            <div class="preview preview-half" lang="ru">
+              <div class="paper">{bodies[dateKey(days[5]!)] ?? ''}</div>
+            </div>
           </button>
           <button
             class="day-half paper side-right"
@@ -188,7 +195,9 @@
                 side="right"
               />
             </div>
-            <div class="preview preview-half" lang="ru">{bodies[dateKey(days[6]!)] ?? ''}</div>
+            <div class="preview preview-half" lang="ru">
+              <div class="paper">{bodies[dateKey(days[6]!)] ?? ''}</div>
+            </div>
           </button>
         </div>
       </section>
@@ -207,7 +216,7 @@
       #f1e6c6 60%,
       #ead9b0 100%
     );
-    padding: 14px 14px env(safe-area-inset-bottom, 16px);
+    padding: 14px 0 14px;
     box-sizing: border-box;
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
@@ -285,6 +294,7 @@
    * .page. A barely-perceptible shadow suggests individual sheets without
    * turning the spread into a floating-cards-on-a-desk look. */
   .day-row {
+    background-color: var(--paper-fill);
     position: relative;
     flex: 1 1 0;
     display: flex;
@@ -321,16 +331,24 @@
    * card. The serif-y voice is meant to feel like handwriting compared to
    * the sans-serif chrome. */
   .preview {
-    margin-left: 6px;
-    margin-right: 6px;
-    padding-top: 2px;
+    display: -webkit-box;
+    overflow-x: hidden;
+    overflow-y: scroll;
+    width: 100%;
+  }
+
+  .preview div {
+    height: fit-content;
+    min-height: 100%;
+    white-space: pre-line;
+    width: 100%;
+    padding-left: 6px;
+    margin-right: 0;
+    padding-top: 0;
     line-height: var(--paper-line-height);
-    font-size: 13px;
+    font-size: 12px;
     color: #2c2412;
     font-family: 'Georgia', 'Times New Roman', ui-serif, serif;
-    display: -webkit-box;
-    overflow: hidden;
-    white-space: pre-line;
   }
 
   .preview-half {
@@ -370,7 +388,7 @@
 
   @media (min-width: 700px) {
     .preview {
-      font-size: 14px;
+      font-size: 12px;
     }
   }
 </style>
