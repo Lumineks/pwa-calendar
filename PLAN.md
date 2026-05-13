@@ -35,6 +35,9 @@ todos:
   - id: audit-2
     content: Audit checkpoint 2 [opus-4.7] — Review sync correctness and multi-device behavior, write audits/audit-2.md, update PWA & deploy phases in PLAN.md if needed
     status: pending
+  - id: phase-6.5
+    content: "Phase 6.5 [sonnet-4.6] — Sync + dev-script bugfix micro-phase (added by Audit 2): re-arm push() at end of its success branch so dirty entries that arrived during the push are drained in the immediate next cycle; fix worker:dev script to pass --env dev so CORS allows localhost:5173"
+    status: pending
   - id: phase-7
     content: "Phase 7 [sonnet-4.6] — PWA polish: vite-plugin-pwa with Tailwind v4 compatibility, Russian manifest, 192/512 + maskable icons, apple-touch-icon + meta tags, viewport-fit=cover + safe-area, Workbox runtimeCaching (cache shell, NetworkOnly for Worker API)"
     status: pending
@@ -84,6 +87,7 @@ Per-phase model selection. Rationale:
 | 5 — Worker backend      | sonnet-4.6   | Well-defined API surface, ~150 LOC of TS.                                                     |
 | 6 — Sync layer          | **opus-4.7** | LWW + dirty-set + backoff + pull loop is the trickiest logic in the app.                      |
 | **Audit 2**             | **opus-4.7** | Validates that sync is actually correct on two devices before locking in PWA & deploy phases. |
+| 6.5 — Sync bugfix       | sonnet-4.6   | Two surgical, isolated fixes called out by Audit 2 — `push()` re-arm on success + `worker:dev` env flag. Added by Audit 2. |
 | 7 — PWA polish          | sonnet-4.6   | Config + manifest + icons.                                                                    |
 | 8 — Deployment & CI     | sonnet-4.6   | Workflow YAML + vite base path.                                                               |
 | **Audit 3 (final)**     | **opus-4.7** | Post-deploy review on a real device.                                                          |
@@ -191,7 +195,8 @@ flowchart LR
   P46 --> P5[Phase 5<br/>Worker]
   P5 --> P6[Phase 6<br/>Sync]
   P6 --> A2{Audit 2}
-  A2 --> P7[Phase 7<br/>PWA]
+  A2 --> P65[Phase 6.5<br/>Sync bugfix]
+  P65 --> P7[Phase 7<br/>PWA]
   P7 --> P8[Phase 8<br/>Deploy + CI]
   P8 --> A3{Audit 3<br/>final}
 ```
@@ -735,11 +740,133 @@ small subtraction from `DayView.svelte` and `WeekView.svelte`. No new files.
 
 ---
 
+## Phase 6.5 — Sync + dev-script bugfix micro-phase [sonnet-4.6]
+
+**Goal.** Land the two small, isolated fixes identified by Audit 2 before
+the PWA work begins: re-arm `push()` when new dirty entries accumulated
+during the push, and make `npm run worker:dev` actually use the
+`[env.dev]` block so the local frontend can talk to the local worker
+without a CORS rejection.
+
+**Why a separate phase.** Phase 7 is a PWA-config session (vite-plugin-pwa,
+manifest, icons, Workbox runtime caching). These two fixes are surgical
+and unrelated to PWA polish; bundling them avoids spending Phase 7's
+context on them. Both are one-line edits with no design ambiguity, hence
+sonnet-4.6.
+
+**Prerequisites.** Phases 0–6 + Audit 2.
+
+**Reads.** `AGENTS.md` (Sync model section), `PLAN.md`, `audits/audit-2.md`
+(Bugs found section + the "Recommendation" section), `src/data/sync.ts`,
+`worker/package.json`, `worker/wrangler.toml`. OPTIONAL: `src/styles/paper.css`
+(Bug 3 in Audit 2).
+
+**Tasks.**
+
+1. **Fix `push()` not re-arming on success (Audit 2, Bug 1).** In
+   `src/data/sync.ts`, locate the `push()` function (lines ~153-233 of
+   the audited revision). Inside the `else` branch (the
+   no-network-failures, success path) — currently:
+
+   ```ts
+   } else {
+     backoffMs = BACKOFF_INITIAL_MS;
+     persistDirty();
+   }
+
+   pushInFlight = false;
+   ```
+
+   Replace with:
+
+   ```ts
+   } else {
+     backoffMs = BACKOFF_INITIAL_MS;
+     persistDirty();
+   }
+
+   pushInFlight = false;
+   // If new dirty entries arrived during the push (markDirty's
+   // schedulePush bailed because pushInFlight was true), re-arm now.
+   if (dirty.size > 0) schedulePush(0);
+   ```
+
+   Note the order: `pushInFlight = false` MUST come before
+   `schedulePush(0)` so the call doesn't bail on the very check it was
+   designed to gate on. Verify by reading `schedulePush()` (sync.ts:142-151)
+   — its first line is `if (pushScheduled || pushInFlight) return;`.
+
+2. **Fix `npm run worker:dev` missing `--env dev` (Audit 2, Bug 2).** In
+   `worker/package.json` `scripts.dev`:
+
+   ```diff
+   - "dev": "wrangler dev",
+   + "dev": "wrangler dev --env dev",
+   ```
+
+   That's the only change to the worker package. `wrangler.toml` is
+   untouched; its `[env.dev]` block already has the right
+   `ALLOWED_ORIGIN = "http://localhost:5173"`.
+
+3. **OPTIONAL — `paper.css` comment touch-up (Audit 2, Bug 3).** Only do
+   this if the agent is already in the file for some other reason — it's
+   pure documentation drift, not a code bug. The comment "Phase 4.6:
+   tightened from 27px → 20px" predates the user's later commit
+   `217891e` which tightened the variable further to `18px`. The
+   one-line edit:
+
+   ```diff
+   - /* Phase 4.6: tightened from 27px → 20px for a denser ruled-paper rhythm.
+   + /* Phase 4.6: tightened from 27px → 20px → 18px (final value after
+   +  * user commit 217891e). Denser ruled-paper rhythm.
+       * DayView's .editor padding-top is recalibrated alongside this change. */
+   ```
+
+   Skip if you'd rather fold it into Phase 7's CSS edits.
+
+4. **Verify locally.**
+   - `npm run check` (must exit 0).
+   - `npm run build` (must succeed).
+   - From the repo root, run `npm run worker:dev` (NOT `npx wrangler
+     dev --env dev` directly) and confirm wrangler prints:
+     `env.ALLOWED_ORIGIN ("http://localhost:5173") Environment Variable local`
+     in its bindings dump. The previous behavior printed
+     `https://example.invalid`.
+   - With both `npm run dev` and `npm run worker:dev` running, paste the
+     dev token, type on `/day/<today>`. Confirm the worker tail shows
+     a `PUT /entries/<today> 200 OK` (no CORS rejection).
+   - For Bug 1 specifically: type on `/day/X`, wait for a `push()` to
+     start in the wrangler tail (a `PUT /entries/X` request), then —
+     while that PUT is in flight — type a single character on a SECOND
+     date `/day/Y`. After the X-push completes, the Y-push should fire
+     immediately (within ~50 ms, since `schedulePush(0)` queues a 0 ms
+     timer), not wait for the next external trigger. Verify in the
+     network tab and the wrangler tail.
+
+**Deliverable.** Two changed files (`src/data/sync.ts`, `worker/package.json`)
+and OPTIONALLY a third (`src/styles/paper.css`). One commit
+`fix: phase 6.5 — push re-arm on success + worker:dev --env dev`.
+
+**Acceptance criteria.**
+
+- `npm run check` exits 0.
+- `npm run build` succeeds.
+- `npm run worker:dev` (from repo root) starts wrangler with
+  `ALLOWED_ORIGIN = "http://localhost:5173"` per its bindings dump.
+- Local frontend on `localhost:5173` makes successful CORS round-trips
+  to the local worker on `localhost:8787` with no console CORS errors.
+- The S6 repro from `audits/audit-2.md` (push X, then type on Y mid-PUT)
+  no longer leaves Y orphaned in `dirty` — the worker tail shows
+  `PUT /entries/Y 200 OK` within ~1 s of X's PUT completing, with no
+  intervening reload / navigation / online-event needed.
+
+---
+
 ## Phase 7 — PWA polish [sonnet-4.6]
 
 **Goal.** Installable on iOS Safari with a proper home-screen icon, Russian name, standalone display, and offline-tolerant caching of the app shell.
 
-**Prerequisites.** Phases 0–6 + Audit 2.
+**Prerequisites.** Phases 0–6 + Audit 2 + Phase 6.5.
 
 **Reads.** `AGENTS.md` (PWA tooling, Distribution), `PLAN.md`.
 
@@ -785,7 +912,7 @@ small subtraction from `DayView.svelte` and `WeekView.svelte`. No new files.
 
 **Goal.** Push to `main` and the site auto-deploys; document operational procedures.
 
-**Prerequisites.** Phases 0–7 + Audit 2.
+**Prerequisites.** Phases 0–7 + Audit 2 + Phase 6.5.
 
 **Reads.** `AGENTS.md` (Hosting, Token rotation), `PLAN.md`.
 
@@ -836,7 +963,7 @@ small subtraction from `DayView.svelte` and `WeekView.svelte`. No new files.
 
 **Goal.** Post-deploy full review on a real device. Confirm the app meets AGENTS.md and capture any v1.x polish items.
 
-**Prerequisites.** Phases 0–8 + Audits 1 & 2.
+**Prerequisites.** Phases 0–8 + Audits 1 & 2 + Phase 6.5.
 
 **Reads.** `AGENTS.md`, `PLAN.md`, `audits/audit-1.md`, `audits/audit-2.md`, the deployed site.
 
