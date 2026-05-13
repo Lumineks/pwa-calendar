@@ -15,6 +15,7 @@
   import MonthPicker from '../components/MonthPicker.svelte';
   import SpiralBinding from '../components/SpiralBinding.svelte';
   import DayTab from '../components/DayTab.svelte';
+  import OnlineIndicator from '../components/OnlineIndicator.svelte';
 
   interface Props {
     isoMonday: string;
@@ -89,6 +90,7 @@
     <header class="topbar">
       <MonthPicker monday={mondayStr} onChange={handleMonthChange} />
       <span class="week-caption">{weekCaption}</span>
+      <OnlineIndicator />
       <button type="button" class="dev-exit" onclick={clearToken}>Выйти</button>
     </header>
 

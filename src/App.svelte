@@ -5,6 +5,7 @@
   import TokenGate from './routes/TokenGate.svelte';
   import WeekView from './routes/WeekView.svelte';
   import DayView from './routes/DayView.svelte';
+  import { syncStart, syncStop } from './data/sync.ts';
 
   // Validate and fix the URL before the Router mounts so it always initializes
   // on a good path. Router reads history.location on creation, so mutations here
@@ -35,6 +36,20 @@
       }
     }
   }
+
+  // Phase 6: sync triggers follow the token. syncStart() is idempotent so a
+  // re-render with the same token value won't double-attach listeners. On
+  // logout (clearToken), syncStop tears down timers and listeners. The
+  // in-memory dirty set is preserved across token clears — if the user
+  // re-pastes the same token, queued edits resume.
+  $effect(() => {
+    if ($token === null) {
+      syncStop();
+      return;
+    }
+    syncStart();
+    return () => syncStop();
+  });
 </script>
 
 {#if $token === null}

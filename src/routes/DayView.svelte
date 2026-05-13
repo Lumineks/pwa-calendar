@@ -105,8 +105,21 @@
   /**
    * Load the body from Dexie whenever `date` changes (including initial
    * mount). Cleanup cancels any in-flight load (so a slow Dexie response for
-   * the previous date can't clobber the new one) and cancels any pending
-   * debounced save for the previous date.
+   * the previous date can't clobber the new one) AND eagerly flushes any
+   * pending debounced save for the previous date.
+   *
+   * Audit 1 (decision 4e) flagged this cleanup as a data-loss risk once
+   * Phase 6 ships: the old implementation called `save.cancel()`, which
+   * silently dropped uncommitted text from the previous date. Because Dexie
+   * never saw the write, markDirty was never called either, so the sync
+   * layer also wouldn't carry the change to KV — local + remote loss.
+   *
+   * Fix: capture `target` (the OLD date) at effect setup so the cleanup
+   * closure can persist it directly. We do NOT call `save.flush()` because
+   * util.ts's flush takes `(...newArgs)` and our `save` closure ignores its
+   * args entirely (it reads the LATEST reactive `date`/`body` — which by
+   * cleanup time have already advanced to the NEW date). Direct putEntry
+   * with the captured prev values is the unambiguous fix.
    */
   $effect(() => {
     if (!validInput) return;
@@ -120,8 +133,18 @@
     });
     return () => {
       cancelled = true;
-      save.cancel();
-      pendingSave = false;
+      if (pendingSave) {
+        // Capture the OLD date+body before the cleanup returns — by the time
+        // this closure runs, `date` may already point at the NEW route, but
+        // `body` still holds what the user typed into the OLD date (we have
+        // not yet awaited the new getEntry load above for the new target).
+        const prevDate = target;
+        const prevBody = body;
+        save.cancel();
+        pendingSave = false;
+        // Fire-and-forget. markDirty (inside putEntry) queues for sync.
+        void putEntry(prevDate, prevBody);
+      }
     };
   });
 
