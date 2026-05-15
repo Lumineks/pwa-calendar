@@ -230,6 +230,9 @@ async function push(): Promise<void> {
   }
 
   pushInFlight = false;
+  // If new dirty entries arrived during the push (markDirty's
+  // schedulePush bailed because pushInFlight was true), re-arm now.
+  if (dirty.size > 0) schedulePush(0);
 }
 
 // ── Pull ────────────────────────────────────────────────────────────────
