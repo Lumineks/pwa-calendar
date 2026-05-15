@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+@layer base {
+  html,
+  body {
+    /* Prevent iOS Safari from scaling up font sizes in landscape. */
+    -webkit-text-size-adjust: 100%;
+    /* Prevent pull-to-refresh and overscroll bounce from interfering with
+       the app's own scroll areas. */
+    overscroll-behavior-y: contain;
+  }
+}
