@@ -2,7 +2,7 @@
 
 A personal weekly journal PWA for a single user, styled as a paper school journal (lined pages, spiral binding, day tabs). Modeled after the "План недели — Ежедневник" iOS app. Data lives locally in IndexedDB and syncs in the background to a Cloudflare Worker + KV store. Two devices sharing the same access code share the same journal.
 
-**Live:** https://Lumineks.github.io/pwa-calendar/
+**Live:** https://lumineks.github.io/pwa-calendar/
 
 ---
 
@@ -20,7 +20,7 @@ A personal weekly journal PWA for a single user, styled as a paper school journa
 
 ## Как установить на iOS / Install on iOS
 
-1. Open **Safari** and go to `https://Lumineks.github.io/pwa-calendar/`
+1. Open **Safari** and go to `https://lumineks.github.io/pwa-calendar/`
 2. Tap the **Share** button (box with an arrow pointing up)
 3. Tap **"На экран «Домой»"** (Add to Home Screen)
 4. Tap **"Добавить"** (Add)

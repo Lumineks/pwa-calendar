@@ -7,7 +7,7 @@ binding = "JOURNAL"
 id = "e329d26f945e46c094a7bf982d8a5895"
 
 [vars]
-ALLOWED_ORIGIN = "https://Lumineks.github.io"
+ALLOWED_ORIGIN = "https://lumineks.github.io"
 
 [env.dev]
 [env.dev.vars]
