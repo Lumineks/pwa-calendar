@@ -4,49 +4,49 @@ overview: Build the iOS-only Russian-language journal/calendar PWA defined in AG
 todos:
   - id: phase-0
     content: Phase 0 [sonnet-4.6] — Repo bootstrap (save PLAN.md, scaffold Svelte 5 + Vite + TS + Tailwind v4.2, dir skeleton, npm scripts, git init, README skeleton)
-    status: pending
+    status: completed
   - id: phase-1
     content: "Phase 1 [sonnet-4.6] — Frontend foundation (local-only): svelte-routing with three routes, state/auth.ts (localStorage-backed, no validation yet), TokenGate.svelte with Russian copy, App.svelte gated routing, empty WeekView/DayView placeholders"
-    status: pending
+    status: completed
   - id: phase-2
     content: "Phase 2 [sonnet-4.6] — Local data layer: Dexie instance + entries table keyed by YYYY-MM-DD, repository functions (getEntry/putEntry/deleteEntry/listEntries), debounce helper, sync-hook stubs"
-    status: pending
+    status: completed
   - id: phase-3
     content: "Phase 3 [opus-4.7] — WeekView UI (paper journal aesthetic): paper-css lined background, SpiralBinding, DayTab, MonthPicker, two-page weekly spread reading from Dexie, prev/next week nav, Russian weekday names via date-fns/locale/ru"
-    status: pending
+    status: completed
   - id: phase-4
     content: "Phase 4 [sonnet-4.6] — DayView UI: full-screen <textarea> on lined paper with line-height matching, 300ms debounced auto-save to Dexie, Russian-formatted date header, back button, tab-to-fullscreen transition continuity, save indicator"
-    status: pending
+    status: completed
   - id: audit-1
     content: "Audit checkpoint 1 [opus-4.7] — Review local-only MVP: run the app, compare to AGENTS.md, write audits/audit-1.md, update remaining phases in PLAN.md if needed"
-    status: pending
+    status: completed
   - id: phase-4.5
     content: "Phase 4.5 [sonnet-4.6] — Frontend bugfix micro-phase (added by Audit 1): enable allowImportingTsExtensions so npm run check passes; centralize date validation in App.svelte so direct visits to /day/<garbage> or /week/<garbage> no longer blank the page"
-    status: pending
+    status: completed
   - id: phase-4.6
     content: "Phase 4.6 [sonnet-4.6] — WeekView visual polish: vertical day separation (paper cards with gradient gaps) + denser lines (20 px rhythm, 13 px preview text, recalibrated DayView padding-top) (added by user after Audit 1)"
-    status: pending
+    status: completed
   - id: phase-5
     content: "Phase 5 [sonnet-4.6] — Cloudflare Worker backend: one-time Cloudflare account + KV namespace + JOURNAL_TOKEN secret setup, implement /health + /entries (list & range) + /entries/:date (GET/PUT/DELETE) with bearer-token auth + strict CORS + LWW PUT semantics, deploy, curl smoke test"
-    status: pending
+    status: completed
   - id: phase-6
     content: "Phase 6 [opus-4.7] — Sync layer: data/api.ts (typed bearer-injecting fetch), TokenGate /health validation, data/sync.ts with dirty-set (localStorage-backed), debounced push (~3s) with backoff, periodic pull (mount + 3min + online), LWW merge by updatedAt, online/offline indicator, cross-device manual test"
-    status: pending
+    status: completed
   - id: audit-2
     content: Audit checkpoint 2 [opus-4.7] — Review sync correctness and multi-device behavior, write audits/audit-2.md, update PWA & deploy phases in PLAN.md if needed
-    status: pending
+    status: completed
   - id: phase-6.5
     content: "Phase 6.5 [sonnet-4.6] — Sync + dev-script bugfix micro-phase (added by Audit 2): re-arm push() at end of its success branch so dirty entries that arrived during the push are drained in the immediate next cycle; fix worker:dev script to pass --env dev so CORS allows localhost:5173"
-    status: pending
+    status: completed
   - id: phase-7
     content: "Phase 7 [sonnet-4.6] — PWA polish: vite-plugin-pwa with Tailwind v4 compatibility, Russian manifest, 192/512 + maskable icons, apple-touch-icon + meta tags, viewport-fit=cover + safe-area, Workbox runtimeCaching (cache shell, NetworkOnly for Worker API)"
-    status: pending
+    status: completed
   - id: phase-8
     content: "Phase 8 [sonnet-4.6] — Deployment & CI: GitHub repo + Pages config, vite base path, GitHub Actions deploying Pages + wrangler deploy with CLOUDFLARE_API_TOKEN secret, final README (token rotation, manual deploy commands), cold-install on real iOS device"
-    status: pending
+    status: completed
   - id: audit-3
     content: "Audit checkpoint 3 (final) [opus-4.7] — Post-deploy review: real-device end-to-end testing, multi-device convergence verification, edge cases, performance, write audits/audit-3.md with any v1.x polish recommendations"
-    status: pending
+    status: completed
 isProject: false
 ---
 
