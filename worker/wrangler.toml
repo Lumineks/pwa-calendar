@@ -7,9 +7,7 @@ binding = "JOURNAL"
 id = "e329d26f945e46c094a7bf982d8a5895"
 
 [vars]
-# Production CORS origin — update to your GitHub Pages URL in Phase 8
-# e.g. ALLOWED_ORIGIN = "https://<you>.github.io"
-ALLOWED_ORIGIN = "https://example.invalid"
+ALLOWED_ORIGIN = "https://Lumineks.github.io"
 
 [env.dev]
 [env.dev.vars]

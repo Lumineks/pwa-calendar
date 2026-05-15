@@ -5,7 +5,8 @@
  * the DayView textarea so user-typed text sits exactly on these lines. */
 
 :root {
-  /* Phase 4.6: tightened from 27px → 20px for a denser ruled-paper rhythm.
+  /* Phase 4.6: tightened from 27px → 20px → 18px (final value after
+   * user commit 217891e). Denser ruled-paper rhythm.
    * DayView's .editor padding-top is recalibrated alongside this change. */
   --paper-line-height: 18px;
   --paper-fill: #fbf6e9;

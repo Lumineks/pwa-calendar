@@ -26,10 +26,10 @@ and sends it to the user once over a private channel (Signal / iMessage). The us
 
 | Environment | `ALLOWED_ORIGIN` | Set via |
 |---|---|---|
-| Production | `https://example.invalid` (placeholder) | `wrangler.toml [vars]` |
+| Production | `https://Lumineks.github.io` | `wrangler.toml [vars]` |
 | Dev (`wrangler dev`) | `http://localhost:5173` | `wrangler.toml [env.dev.vars]` |
 
-**Phase 8 reminder:** update `ALLOWED_ORIGIN` in `wrangler.toml` to the real GitHub Pages URL (e.g. `https://<you>.github.io`) before the final production deploy.
+Production origin is `https://Lumineks.github.io`. This matches the `Authorization: Bearer` check against the `Origin` header on every non-OPTIONS request.
 
 ---
 

@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    base: '/pwa-calendar/',
     plugins: [
       tailwindcss(),
       svelte(),
@@ -30,6 +31,8 @@ export default defineConfig(({ mode }) => {
           description: 'Личный недельный ежедневник',
           lang: 'ru',
           display: 'standalone',
+          start_url: '/pwa-calendar/',
+          scope: '/pwa-calendar/',
           theme_color: '#fbf6e9',
           background_color: '#fbf6e9',
           icons: [
