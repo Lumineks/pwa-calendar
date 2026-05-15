@@ -63,12 +63,14 @@
     };
   });
 
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
   function handleMonthChange(newIsoMonday: string): void {
-    navigate(`/week/${newIsoMonday}`);
+    navigate(`${base}/week/${newIsoMonday}`);
   }
 
   function openDay(date: string): void {
-    navigate(`/day/${date}`);
+    navigate(`${base}/day/${date}`);
   }
 
   function isWeekend(d: Date): boolean {

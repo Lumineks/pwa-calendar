@@ -7,6 +7,11 @@
   import DayView from './routes/DayView.svelte';
   import { syncStart, syncStop } from './data/sync.ts';
 
+  // Strip trailing slash from BASE_URL to get a prefix for navigate() calls and
+  // the Router basepath. In dev (BASE_URL='/') this is '', in production it is
+  // '/pwa-calendar'. Works with any Vite base value without hardcoding.
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
   // Validate and fix the URL before the Router mounts so it always initializes
   // on a good path. Router reads history.location on creation, so mutations here
   // are visible on its first pass — unlike $effect redirects which run after
@@ -14,23 +19,25 @@
   if (typeof window !== 'undefined') {
     const currentIsoMonday = format(startOfISOWeek(new Date()), 'yyyy-MM-dd');
     const SEG_RE = /^\d{4}-\d{2}-\d{2}$/;
-    const pathname = window.location.pathname;
+    // Strip the base prefix so the checks below work identically in dev and prod.
+    const raw = window.location.pathname;
+    const pathname = base ? raw.slice(base.length) || '/' : raw;
 
     if (pathname === '/') {
-      navigate(`/week/${currentIsoMonday}`, { replace: true });
+      navigate(`${base}/week/${currentIsoMonday}`, { replace: true });
     } else {
       const dayMatch = /^\/day\/([^/]+)$/.exec(pathname);
       if (dayMatch) {
         const seg = dayMatch[1] ?? '';
         if (!SEG_RE.test(seg) || !isValid(parseISO(seg))) {
-          navigate(`/week/${currentIsoMonday}`, { replace: true });
+          navigate(`${base}/week/${currentIsoMonday}`, { replace: true });
         }
       } else {
         const weekMatch = /^\/week\/([^/]+)$/.exec(pathname);
         if (weekMatch) {
           const seg = weekMatch[1] ?? '';
           if (!SEG_RE.test(seg) || !isValid(parseISO(seg))) {
-            navigate(`/week/${currentIsoMonday}`, { replace: true });
+            navigate(`${base}/week/${currentIsoMonday}`, { replace: true });
           }
         }
       }
@@ -55,7 +62,7 @@
 {#if $token === null}
   <TokenGate />
 {:else}
-  <Router>
+  <Router basepath={base}>
     <Route path="/week/:isoMonday" let:params>
       <WeekView isoMonday={params['isoMonday'] ?? ''} />
     </Route>

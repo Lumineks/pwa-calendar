@@ -155,8 +155,10 @@
     save();
   }
 
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
   function goBack(): void {
-    navigate(`/week/${isoMondayOfDate}`);
+    navigate(`${base}/week/${isoMondayOfDate}`);
   }
 
   onDestroy(() => {
