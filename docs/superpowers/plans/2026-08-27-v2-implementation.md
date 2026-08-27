@@ -2736,7 +2736,7 @@ git commit -m "feat(pwa): apple splash screens (light+dark), absolute asset href
 - Produces: `InstallHint.svelte`, props `{ onContinue: () => void }` — fires when the user taps «Продолжить в браузере».
 - App gating (order matters — Safari and standalone storage are SEPARATE, so the token must be entered in the installed app): `if (isIOSSafariNotInstalled && !dismissed) → InstallHint`, else the v1 flow.
 
-- [ ] **Step 1: Component**
+- [x] **Step 1: Component**
 
 ```svelte
 <script lang="ts">
@@ -2792,7 +2792,7 @@ git commit -m "feat(pwa): apple splash screens (light+dark), absolute asset href
 </style>
 ```
 
-- [ ] **Step 2: App gating**
+- [x] **Step 2: App gating**
 
 In `App.svelte`:
 
@@ -2836,9 +2836,9 @@ Template — the hint takes precedence over TokenGate:
 {:else if ...}
 ```
 
-- [ ] **Step 3: Verify** — `npm run check`; dev smoke with devtools iPhone UA emulation: hint shows before the token form; «Продолжить в браузере» reveals TokenGate; reload keeps it dismissed.
+- [x] **Step 3: Verify** — `npm run check`; dev smoke with devtools iPhone UA emulation: hint shows before the token form; «Продолжить в браузере» reveals TokenGate; reload keeps it dismissed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/components/InstallHint.svelte src/App.svelte
