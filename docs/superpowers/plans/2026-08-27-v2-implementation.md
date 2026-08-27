@@ -1498,7 +1498,7 @@ git commit -m "feat(client): first-run init — chunked full pull, legacy dirty 
   - `isEmptyHtml(html: string): boolean` — true for `''`, `<p></p>`, whitespace-only docs.
   - `toEditorHtml(entry: { body: string; format?: 'html' } | undefined): string` — dispatch on the format marker (NO prefix sniffing).
 
-- [ ] **Step 1: Install**
+- [x] **Step 1: Install**
 
 ```bash
 npm i @tiptap/core@3.30.5 @tiptap/pm@3.30.5 @tiptap/extension-document@3.30.5 @tiptap/extension-paragraph@3.30.5 @tiptap/extension-text@3.30.5 @tiptap/extension-text-style@3.30.5 @tiptap/extensions@3.30.5 dompurify
@@ -1506,7 +1506,7 @@ npm i @tiptap/core@3.30.5 @tiptap/pm@3.30.5 @tiptap/extension-document@3.30.5 @t
 
 EXACT pins for all `@tiptap/*` (no `^`) — verify `package.json` shows bare `"3.30.5"`; edit if npm added carets. If 3.30.5 is no longer the latest, pick ONE current exact version for all seven packages.
 
-- [ ] **Step 2: Palette**
+- [x] **Step 2: Palette**
 
 Create `src/data/palette.ts`:
 
@@ -1525,7 +1525,7 @@ export type PenId = (typeof PALETTE)[number]['id'];
 export const DEFAULT_PEN: PenId = 'ink';
 ```
 
-- [ ] **Step 3: Failing sanitizer tests**
+- [x] **Step 3: Failing sanitizer tests**
 
 Create `src/data/sanitize.test.ts`:
 
@@ -1596,7 +1596,7 @@ describe('plainToHtml / isEmptyHtml / toEditorHtml', () => {
 
 Run: `npm test` — expect FAIL (module missing).
 
-- [ ] **Step 4: Implement `src/data/sanitize.ts`**
+- [x] **Step 4: Implement `src/data/sanitize.ts`**
 
 ```ts
 /**
@@ -1722,9 +1722,9 @@ export function toEditorHtml(
 }
 ```
 
-- [ ] **Step 5: Run — expect PASS** (`npm test`). Adjust the color-normalization expectation if jsdom normalizes to `rgb()` — the test accepts both.
+- [x] **Step 5: Run — expect PASS** (`npm test`). Adjust the color-normalization expectation if jsdom normalizes to `rgb()` — the test accepts both.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add package.json package-lock.json src/data/palette.ts src/data/sanitize.ts src/data/sanitize.test.ts
