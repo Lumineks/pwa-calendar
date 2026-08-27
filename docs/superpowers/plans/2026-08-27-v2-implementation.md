@@ -215,7 +215,7 @@ git commit -m "chore(worker): separate dev KV namespace + JOURNAL_TOKENS dev var
 **Interfaces:**
 - Produces: `parseTokenMap(raw: string | undefined): Map<string, { account: string; digest: ArrayBuffer }> | null` (async variant below), and `verifyToken(request: Request, env: { JOURNAL_TOKENS?: string }): Promise<string | null>` returning the accountId or null. `Env` interface: `{ JOURNAL: KVNamespace; JOURNAL_TOKENS: string; ALLOWED_ORIGIN: string }` (drop `JOURNAL_TOKEN` from the type; the secret itself stays provisioned).
 
-- [ ] **Step 1: Install the test stack**
+- [x] **Step 1: Install the test stack**
 
 Run from `worker/`:
 
@@ -225,7 +225,7 @@ npm i -D vitest@^4.1.0 @cloudflare/vitest-plugin@^1.1.0
 
 Add to `worker/package.json` scripts: `"test": "vitest run"`.
 
-- [ ] **Step 2: Vitest config**
+- [x] **Step 2: Vitest config**
 
 Create `worker/vitest.config.ts`:
 
@@ -254,7 +254,7 @@ export default defineConfig({
 
 NOTE for implementer: the plugin was renamed from `@cloudflare/vitest-pool-workers` on 2026-08-19; if the `cloudflareTest` option shape differs in the installed version, follow the package README — the fixed points are: `configPath` accepts our `.toml`; tests import `env` from `cloudflare:workers` and `createExecutionContext`/`waitOnExecutionContext` from `cloudflare:test`. Deliberately different token lengths above — they exercise the no-throw guarantee.
 
-- [ ] **Step 3: Write failing tests**
+- [x] **Step 3: Write failing tests**
 
 Create `worker/test/tokens.spec.ts`:
 
@@ -313,11 +313,11 @@ describe('verifyBearer', () => {
 });
 ```
 
-- [ ] **Step 4: Run tests — expect FAIL**
+- [x] **Step 4: Run tests — expect FAIL**
 
 Run: `npm --prefix worker test` — expected: cannot resolve `../src/tokens`.
 
-- [ ] **Step 5: Implement `worker/src/tokens.ts`**
+- [x] **Step 5: Implement `worker/src/tokens.ts`**
 
 ```ts
 /**
@@ -409,11 +409,11 @@ export async function verifyBearer(
 }
 ```
 
-- [ ] **Step 6: Run tests — expect PASS**
+- [x] **Step 6: Run tests — expect PASS**
 
 Run: `npm --prefix worker test` — all tokens.spec tests green.
 
-- [ ] **Step 7: Wire into `worker/src/index.ts` (absorbs the uncommitted edit)**
+- [x] **Step 7: Wire into `worker/src/index.ts` (absorbs the uncommitted edit)**
 
 Replace the `Env` interface and delete the old `verifyToken` function entirely (including the dead `const tokens = env.JOURNAL_TOKENS;` line from the uncommitted working-tree state):
 
@@ -447,7 +447,7 @@ with:
 
 (`account` is threaded into handlers in Task A4 — for this commit it may be unused except in the null check; add `void account;` if TS complains, removed next task.)
 
-- [ ] **Step 8: Typecheck + test + commit**
+- [x] **Step 8: Typecheck + test + commit**
 
 Run: `npx --prefix worker tsc --noEmit -p worker/tsconfig.json` (or `cd worker && npx tsc --noEmit`), then `npm --prefix worker test`.
 
