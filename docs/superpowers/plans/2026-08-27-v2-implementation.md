@@ -2069,7 +2069,7 @@ git commit -m "fix(sync): refresh open DayView on remote update (composition-saf
 - Produces: `WeekSpread.svelte` props `{ monday: Date; previews: Record<string, string>; onOpenDay: (date: string) => void; today: Date }` — renders the two-page spread (markup moved verbatim from v1 WeekView, including SpiralBinding and DayTab slots) with `{@html previews[key]}` in the `.preview` divs. `previews` values are ALREADY-SANITIZED HTML strings (WeekView sanitizes; WeekSpread trusts its prop).
 - WeekView produces `previewHtmlFor(entry: Entry): string` and passes `setViewAnchor` (A7).
 
-- [ ] **Step 1: Extract `WeekSpread.svelte`**
+- [x] **Step 1: Extract `WeekSpread.svelte`**
 
 Move the `.spread` section (both `page` sections + `<SpiralBinding/>` + all day-row buttons) and its styles from `WeekView.svelte` into the new component. Replace `{bodies[key] ?? ''}` text interpolation with:
 
@@ -2118,7 +2118,7 @@ CSS changes inside WeekSpread (replacing v1 `.preview` rules — B7 + block-chil
 
 `today` comes in as a prop (prep for B8's shared store; for now WeekView passes its existing `today`).
 
-- [ ] **Step 2: WeekView — previews + anchor + prefetch**
+- [x] **Step 2: WeekView — previews + anchor + prefetch**
 
 In `WeekView.svelte`:
 
@@ -2173,11 +2173,11 @@ Template: replace the whole `.spread` block with:
     <WeekSpread monday={monday} {previews} onOpenDay={openDay} {today} />
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 `npm run check`; `npm test` (sanitize suite still green). Dev smoke: colored entry from B3 shows colored in the week preview; a legacy plain entry shows with line breaks; Sat/Sun cards clamp at 2 lines; no visible scrollbar gutter. Network tab: `RichEditor` chunk loads a moment after WeekView renders; opening a day does not re-download it.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/components/WeekSpread.svelte src/routes/WeekView.svelte
