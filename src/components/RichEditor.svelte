@@ -63,6 +63,19 @@
     // sets the stored mark so subsequent typing uses the pen.
     editor?.chain().focus().setColor(css).run();
   }
+  /**
+   * O(1) emptiness check on ProseMirror's own document — `isNodeEmpty` on the
+   * doc node, no serialization and no HTML re-parse.
+   *
+   * This exists specifically for DayView's keystroke path: it runs inside
+   * ProseMirror's dispatch on EVERY transaction, where the alternative
+   * (`isEmptyHtml`) costs two full DOMPurify passes plus a DOMParser parse of
+   * the whole document — pathological right after a multi-megabyte paste,
+   * exactly when the user is deleting their way back under the byte limit.
+   */
+  export function isEmpty(): boolean {
+    return editor?.isEmpty ?? true;
+  }
   export function isComposing(): boolean {
     return editor?.view.composing ?? false;
   }

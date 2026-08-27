@@ -110,6 +110,14 @@
     error: 'Ошибка сохранения',
   };
 
+  /**
+   * Label and tone MUST derive from the same condition. Deriving the text from
+   * `saveError` while the class stayed `state-${saveState}` let the indicator
+   * render «Слишком длинная запись» in the *success* colour: once an armed
+   * debounce committed the last within-limit content, `saveState` went back to
+   * 'saved' while `saveError` was still set.
+   */
+  const saveTone = $derived<SaveState>(saveError !== '' ? 'error' : saveState);
   const saveLabel = $derived(saveError !== '' ? saveError : SAVE_LABEL[saveState]);
 
   /**
@@ -195,10 +203,20 @@
    * within-limit document, and any already-armed debounce for it still
    * commits that (correct) content. Deleting back under the limit produces a
    * fresh update and clears the error.
+   *
+   * HOT PATH — this runs inside ProseMirror's dispatch on every keystroke, so
+   * it must stay cheap. Emptiness comes from `richEditor.isEmpty()` (tiptap's
+   * O(1) check on the live doc), NOT from `isEmptyHtml(html)`, which would
+   * re-run two DOMPurify passes plus a DOMParser parse over the whole
+   * document on every keypress — worst exactly after a multi-megabyte paste,
+   * while the user is deleting back under the limit. `isEmptyHtml` stays as
+   * the fallback for the (unreachable in practice) window where the
+   * `bind:this` handle isn't set yet.
    */
   function handleEditorUpdate(html: string): void {
     if (!validInput) return;
-    const normalized = isEmptyHtml(html) ? '' : html;
+    const empty = richEditor ? richEditor.isEmpty() : isEmptyHtml(html);
+    const normalized = empty ? '' : html;
     if (utf8ByteLength(normalized) > MAX_BODY_BYTES) {
       saveState = 'error';
       saveError = 'Слишком длинная запись';
@@ -241,7 +259,7 @@
       </button>
       <h1 class="date" lang="ru">{russianDate}</h1>
       <span
-        class={['save-indicator', `state-${saveState}`]}
+        class={['save-indicator', `state-${saveTone}`]}
         aria-live="polite"
         role="status"
       >
@@ -251,12 +269,23 @@
 
     <div class="palette" role="toolbar" aria-label="Цвет текста">
       {#each PALETTE as pen (pen.id)}
+        <!-- `pointerup` is the pointer path (see .palette in <style>). Enter
+             and Space synthesize `click`, which nothing here handles, so the
+             keyboard path is wired explicitly rather than by re-adding
+             `onclick`. -->
         <button
           type="button"
           class={['pen', activePen === pen.css && 'is-active']}
           style={`--pen: ${pen.css}`}
           aria-label={pen.label}
+          aria-pressed={activePen === pen.css}
           onpointerup={() => pickPen(pen.css)}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              pickPen(pen.css);
+            }
+          }}
         ></button>
       {/each}
     </div>
