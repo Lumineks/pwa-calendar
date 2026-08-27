@@ -1,6 +1,7 @@
 <script lang="ts">
   import { parseISO, format, addDays, startOfISOWeek } from 'date-fns';
   import { ru } from 'date-fns/locale';
+  import { today } from '../state/today.ts';
 
   /**
    * MonthPicker — week navigation header.
@@ -27,7 +28,7 @@
     return raw.charAt(0).toUpperCase() + raw.slice(1);
   });
 
-  const todayIsoMonday = $derived(format(startOfISOWeek(new Date()), 'yyyy-MM-dd'));
+  const todayIsoMonday = $derived(format(startOfISOWeek($today), 'yyyy-MM-dd'));
   const isOnCurrentWeek = $derived(monday === todayIsoMonday);
 
   function step(deltaDays: number): void {

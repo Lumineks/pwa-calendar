@@ -54,7 +54,7 @@
     {/each}
   </section>
 
-  <SpiralBinding count={26} />
+  <SpiralBinding />
 
   <!-- RIGHT PAGE: Thu, Fri, then split row of Sat + Sun -->
   <section class="page page-right spiral-page">

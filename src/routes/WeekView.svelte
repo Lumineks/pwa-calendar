@@ -11,6 +11,7 @@
   import { setViewAnchor } from '../data/sync.ts';
   import { sanitizeHtml, plainToHtml } from '../data/sanitize.ts';
   import { base } from '../lib/base.ts';
+  import { today } from '../state/today.ts';
 
   interface Props {
     isoMonday: string;
@@ -42,8 +43,6 @@
   const prevMondayStr = $derived(format(prevMonday, 'yyyy-MM-dd'));
   const nextMondayStr = $derived(format(nextMonday, 'yyyy-MM-dd'));
   const nextSundayStr = $derived(format(addDays(monday, 13), 'yyyy-MM-dd'));
-
-  const today = new Date();
 
   function previewHtmlFor(entry: Entry): string {
     if (entry.format === 'html') return sanitizeHtml(entry.body);
@@ -125,15 +124,15 @@
       >
         {#snippet prev()}
           <div class="offscreen-panel" inert>
-            <WeekSpread monday={prevMonday} {previews} onOpenDay={openDay} {today} />
+            <WeekSpread monday={prevMonday} {previews} onOpenDay={openDay} today={$today} />
           </div>
         {/snippet}
         {#snippet current()}
-          <WeekSpread monday={monday} {previews} onOpenDay={openDay} {today} />
+          <WeekSpread monday={monday} {previews} onOpenDay={openDay} today={$today} />
         {/snippet}
         {#snippet next()}
           <div class="offscreen-panel" inert>
-            <WeekSpread monday={nextMonday} {previews} onOpenDay={openDay} {today} />
+            <WeekSpread monday={nextMonday} {previews} onOpenDay={openDay} today={$today} />
           </div>
         {/snippet}
       </SwipePager>

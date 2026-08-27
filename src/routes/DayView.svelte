@@ -712,10 +712,21 @@
    *       restates it on the content root and on <p> (whose margins are
    *       zeroed) so paragraphs land on the rules.
    *
-   *   --editor-pad-top
-   *       Baseline calibration for the system font, consumed by
-   *       .rich-editor-content's padding-top. Task B7 re-measures it; 2px is
-   *       the starting value.
+   *   --editor-pad-top: 2px  (Task B8 calibration — mirrors v1's
+   *       Phase-4.6 calc, corrected)
+   *       The paper rule sits at y=17px of each 18px tile (paper.css's
+   *       --paper-line-height is 18px — v1's version of this comment
+   *       claimed the tile was 20px, which had already gone stale by the
+   *       time it was written; this comment uses the real value). For
+   *       -apple-system 16px in an 18px line-box: half-leading ≈ 1px,
+   *       ascender ≈ 15px → baseline from line-box top ≈ 16px, so
+   *       padding-top = 17 − 16 = 1px by the same arithmetic v1 used —
+   *       within a pixel of the pre-existing 2px value kept below.
+   *       UNVERIFIED: this pass has no browser to render the page in, so
+   *       the value was left unchanged rather than "corrected" on paper
+   *       math alone. Controller: type 6+ lines of Russian and confirm
+   *       each line's baseline sits ON its rule in desktop Safari/Chrome
+   *       and (Phase C) on-device iPhone; nudge ±1px if it doesn't.
    *
    * IMPORTANT: do not set the `background` shorthand here. The global
    * `.paper` class in src/styles/paper.css supplies both the paper-fill
