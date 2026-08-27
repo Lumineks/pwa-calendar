@@ -474,7 +474,7 @@ git commit -m "feat(worker): multi-token auth via JOURNAL_TOKENS map (sha256 + t
   - All KV keys account-prefixed: `a:<account>:entries:<date>`, `a:<account>:index`
 - Produces (module): `MAX_BODY_BYTES = 65536`, `utf8ByteLength(s: string): number` in `worker/src/limits.ts`.
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Create `worker/test/routes.spec.ts`:
 
@@ -584,11 +584,11 @@ describe('multi-account routes', () => {
 });
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (`health` lacks `account`, keys unprefixed, no 413/format).
+- [x] **Step 2: Run — expect FAIL** (`health` lacks `account`, keys unprefixed, no 413/format).
 
 Run: `npm --prefix worker test`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `worker/src/limits.ts`:
 
@@ -643,11 +643,11 @@ async function handleHealth(account: string, allowedOrigin: string): Promise<Res
 
 5. In the dispatch section of `fetch`, pass `account` into every handler call.
 
-- [ ] **Step 4: Run — expect PASS**
+- [x] **Step 4: Run — expect PASS**
 
 Run: `npm --prefix worker test` — both spec files green.
 
-- [ ] **Step 5: Typecheck + commit**
+- [x] **Step 5: Typecheck + commit**
 
 ```bash
 git add worker/
