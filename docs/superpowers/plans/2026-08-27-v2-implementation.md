@@ -2545,7 +2545,7 @@ git commit -m "feat(nav): swipe weeks and days — finger-follow pager wired int
 - Create: `src/state/today.ts`
 - Delete: `src/lib/Counter.svelte`, `src/assets/hero.png`, `src/assets/svelte.svg`, `src/assets/vite.svg`
 
-- [ ] **Step 1: SpiralBinding — rings out, line stays**
+- [x] **Step 1: SpiralBinding — rings out, line stays**
 
 Replace the component body/styles:
 
@@ -2583,7 +2583,7 @@ Replace the component body/styles:
 
 In `WeekSpread.svelte` change `<SpiralBinding count={26} />` to `<SpiralBinding />`.
 
-- [ ] **Step 2: Shared midnight-aware `today` store (B2)**
+- [x] **Step 2: Shared midnight-aware `today` store (B2)**
 
 Create `src/state/today.ts`:
 
@@ -2627,11 +2627,11 @@ WeekView: delete `const today = new Date();`, add `import { today } from '../sta
   const todayIsoMonday = $derived(format(startOfISOWeek($today), 'yyyy-MM-dd'));
 ```
 
-- [ ] **Step 3: Font calibration**
+- [x] **Step 3: Font calibration**
 
 The system-font swap already happened in B3 (editor) and B5 (preview). Calibrate the baseline now: in `RichEditor.svelte`, the paper rule sits at y = 17px of each 18px tile (`--paper-line-height: 18px`). For `-apple-system` 16px in an 18px line box, start from `--editor-pad-top: 2px` and verify visually in the browser: type 6 lines of Russian; each line's baseline must sit ON a rule. Adjust `--editor-pad-top` (defined on `.day-view` or `.editor-pane`) by ±1px until it does, on BOTH desktop Safari/Chrome and (in Phase C) the actual iPhone. Record the final value in a comment mirroring v1's calculation comment (and note v1's comment claimed 20px line-height while paper.css says 18px — fix the stale number in the new comment).
 
-- [ ] **Step 4: Scaffold cleanup (B10)**
+- [x] **Step 4: Scaffold cleanup (B10)**
 
 ```bash
 git rm src/lib/Counter.svelte src/assets/hero.png src/assets/svelte.svg src/assets/vite.svg
@@ -2639,7 +2639,7 @@ git rm src/lib/Counter.svelte src/assets/hero.png src/assets/svelte.svg src/asse
 
 (References verified absent by the pre-flight audit.)
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 `npm run check`; `npm run build` succeeds; dev smoke: spiral shows a clean line, no rings; «Сегодня» tab highlight correct.
 
