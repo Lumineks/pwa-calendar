@@ -2406,7 +2406,7 @@ git commit -m "feat(nav): shared base module + SwipePager (finger-follow, edge-g
 - WeekView: three WeekSpread panels (monday −7 / monday / monday +7); entry load widened to `[monday−7, sunday+7]`; previews map covers all three weeks; navigation = `navigate(`${base}/week/<newMonday>`)` (history PUSH — default `navigate` behavior).
 - DayView: pager with static paper previews for date±1; `onBeforeSettle` blurs the editor and waits for the visual viewport to settle; DayView drops `position: fixed` (audit E1) and the v1 `transition:fly` (audit E2).
 
-- [ ] **Step 1: WeekView panels**
+- [x] **Step 1: WeekView panels**
 
 ```svelte
   const prevMondayStr = $derived(format(addDays(monday, -7), 'yyyy-MM-dd'));
@@ -2435,7 +2435,7 @@ Template:
 
 The pager needs a height: wrap in a container with `min-height: calc(100vh - 90px)` (the v1 `.spread` min-height moves here).
 
-- [ ] **Step 2: DayView layout restructure**
+- [x] **Step 2: DayView layout restructure**
 
 CSS: `.day-view` changes from `position: fixed; inset: 0;` to:
 
@@ -2525,11 +2525,11 @@ Template — wrap the day content:
 
 (`neighborHtml` values are produced by `toEditorHtml`, which sanitizes — safe for `{@html}`.)
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 `npm run check`. Dev smoke (desktop devtools touch emulation + phone if reachable): drag WeekView left/right — page follows finger, releases snap; day previews still scroll vertically; swipe in DayView moves between days; typed text flushes before the switch (check Dexie); with keyboard open, swiping blurs first, then animates.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/routes/
