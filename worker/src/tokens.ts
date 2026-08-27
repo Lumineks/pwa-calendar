@@ -23,16 +23,19 @@ async function sha256(s: string): Promise<ArrayBuffer> {
 
 // Cache keyed by the raw secret string: parse+digest once per isolate,
 // not per request. A changed secret (new deploy) changes `raw` identity.
-let cachedRaw: string | undefined;
-let cachedMap: Map<string, TokenEntry> | null = null;
+//
+// We cache the in-flight PROMISE, not the resolved value: parsing awaits
+// sha256() once per map entry, and concurrent requests in the same isolate
+// interleave at those await points. If we published the cache key before
+// the value existed, a second concurrent call could observe the key already
+// set and return a still-empty result while the first call is still hashing
+// — a spurious fail-closed 401 for a valid token. Caching the Promise means
+// every concurrent caller with the same `raw` awaits the same parse.
+const UNSET = Symbol('unset');
+let cachedRaw: string | undefined | typeof UNSET = UNSET;
+let cachedPromise: Promise<Map<string, TokenEntry> | null> | null = null;
 
-export async function parseTokenMap(
-  raw: string | undefined,
-): Promise<Map<string, TokenEntry> | null> {
-  if (raw === cachedRaw) return cachedMap;
-
-  cachedRaw = raw;
-  cachedMap = null;
+async function doParse(raw: string | undefined): Promise<Map<string, TokenEntry> | null> {
   if (!raw) return null;
 
   let parsed: unknown;
@@ -57,8 +60,17 @@ export async function parseTokenMap(
   }
   if (map.size === 0) return null;
 
-  cachedMap = map;
   return map;
+}
+
+export async function parseTokenMap(
+  raw: string | undefined,
+): Promise<Map<string, TokenEntry> | null> {
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    cachedPromise = doParse(raw);
+  }
+  return cachedPromise!;
 }
 
 /** Returns the matched accountId, or null. Never throws on bad input. */

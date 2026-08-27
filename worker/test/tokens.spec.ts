@@ -27,6 +27,14 @@ describe('parseTokenMap', () => {
   it('fails closed on undefined', async () => {
     expect(await parseTokenMap(undefined)).toBeNull();
   });
+  it('shares one in-flight parse across concurrent calls on a cold cache (no spurious null)', async () => {
+    const FRESH_MAP = JSON.stringify({
+      'concurrent-token-cccccccccccccccccccccc': 'concurrent-acct',
+    });
+    const [m1, m2] = await Promise.all([parseTokenMap(FRESH_MAP), parseTokenMap(FRESH_MAP)]);
+    expect(m1).not.toBeNull();
+    expect(m2).not.toBeNull();
+  });
 });
 
 describe('verifyBearer', () => {
