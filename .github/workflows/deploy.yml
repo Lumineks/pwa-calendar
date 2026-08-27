@@ -15,7 +15,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test --if-present
+      - run: npm ci
+        working-directory: worker
+      - run: npm test --if-present
+        working-directory: worker
+
   build-pages:
+    needs: test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +51,7 @@ jobs:
 
   deploy-pages:
     needs: build-pages
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -41,7 +60,12 @@ jobs:
       - uses: actions/deploy-pages@v4
         id: deployment
 
+  # MANUAL ONLY. Auto-deploying the worker would break the migration protocol
+  # (new prefix-reading code live before data is copied). Trigger from the
+  # Actions tab → Deploy → Run workflow.
   deploy-worker:
+    needs: test
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +75,8 @@ jobs:
           cache: npm
           cache-dependency-path: worker/package-lock.json
       - run: npm ci
+        working-directory: worker
+      - run: npm test --if-present
         working-directory: worker
       - run: npx wrangler deploy
         working-directory: worker
