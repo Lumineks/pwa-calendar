@@ -2851,9 +2851,9 @@ git commit -m "feat(pwa): install-before-token onboarding hint for iOS Safari"
 
 ### Task C1: Bundle + full test + build gate
 
-- [ ] **Step 1:** `npm test` and `npm --prefix worker test` — all green. `npm run check` — 0 errors.
-- [ ] **Step 2:** `npm run build`; record gzip sizes of every chunk (`ls -la dist/assets/` + `gzip -9 -c <chunk> | wc -c`). Expectations: main chunk ≈ v1 (≤ ~80 KB gzip), separate RichEditor chunk ≈ 95–105 KB gzip. If the editor code landed in the MAIN chunk, the lazy import leaked a static import somewhere — find and fix (only `import type` from RichEditor is allowed statically).
-- [ ] **Step 3:** Update `README.md`: token rotation section now edits the `JOURNAL_TOKENS` JSON map (`wrangler secret put JOURNAL_TOKENS`); note the manual worker deploy (Actions → Run workflow). Commit: `docs: v2 readme — token map rotation, manual worker deploy`.
+- [x] **Step 1:** `npm test` and `npm --prefix worker test` — all green. `npm run check` — 0 errors.
+- [x] **Step 2:** `npm run build`; record gzip sizes of every chunk (`ls -la dist/assets/` + `gzip -9 -c <chunk> | wc -c`). Expectations: main chunk ≈ v1 (≤ ~80 KB gzip), separate RichEditor chunk ≈ 95–105 KB gzip. If the editor code landed in the MAIN chunk, the lazy import leaked a static import somewhere — find and fix (only `import type` from RichEditor is allowed statically).
+- [x] **Step 3:** Update `README.md`: token rotation section now edits the `JOURNAL_TOKENS` JSON map (`wrangler secret put JOURNAL_TOKENS`); note the manual worker deploy (Actions → Run workflow). Commit: `docs: v2 readme — token map rotation, manual worker deploy`.
 
 ### Task C2: On-device acceptance (real iPhone, test account) — manual checklist
 
