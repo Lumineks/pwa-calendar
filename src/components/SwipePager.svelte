@@ -159,7 +159,7 @@
 <div bind:this={viewport} class="pager">
   <div
     class={['track', animating && 'is-animating']}
-    style={`transform: translateX(calc(-100% + ${offset}px))`}
+    style={`transform: translateX(calc(-100% / 3 + ${offset}px))`}
   >
     <div class="panel">{#if prev}{@render prev()}{/if}</div>
     <div class="panel">{@render current()}</div>
