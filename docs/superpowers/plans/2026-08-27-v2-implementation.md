@@ -975,7 +975,7 @@ This is the load-bearing refactor. Sub-goals, all in this task because they chan
   - `sync.ts`: `syncStart(ns: string): void`, `syncStop(): void`, `setViewAnchor(isoMonday: string): void`, `onEntryUpdated(cb: (date: string) => void): () => void`, `initState` — a `writable<'idle'|'initializing'|'ready'|'needs-network'>` store. (`ensureInitialized` internals come in Task A8; this task stubs it as `initState.set('ready')`.)
   - `api.ts`: `health()` returns `{ ok: true; account: string }`; `putEntry(date, body, updatedAt, format?)` sends format.
 
-- [ ] **Step 1: Rewrite `src/data/db.ts`**
+- [x] **Step 1: Rewrite `src/data/db.ts`**
 
 ```ts
 import Dexie, { type Table } from 'dexie';
@@ -1103,7 +1103,7 @@ export async function dbDeleteFromServer(date: string): Promise<void> {
 
 (Preserve the v1 doc comments about the back-door semantics of `dbWriteFromServer` — copy them over.)
 
-- [ ] **Step 2: Rework `src/data/sync.ts` lifecycle**
+- [x] **Step 2: Rework `src/data/sync.ts` lifecycle**
 
 Changes to make (the file keeps its overall shape; unchanged parts not repeated):
 
@@ -1216,7 +1216,7 @@ async function ensureInitialized(): Promise<void> {
 }
 ```
 
-- [ ] **Step 3: `src/data/api.ts` — health account + format passthrough**
+- [x] **Step 3: `src/data/api.ts` — health account + format passthrough**
 
 ```ts
 export async function health(tokenOverride?: string): Promise<{ ok: true; account: string }> {
@@ -1243,7 +1243,7 @@ export async function putEntry(
 
 In `sync.ts` `push()`, the put call becomes `api.putEntry(date, local.body, local.updatedAt, local.format)`.
 
-- [ ] **Step 4: `src/App.svelte` — wire namespace init**
+- [x] **Step 4: `src/App.svelte` — wire namespace init**
 
 Replace the sync `$effect` with:
 
@@ -1264,13 +1264,13 @@ Replace the sync `$effect` with:
   });
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run check` — 0 errors. Run `npm test` (namespace tests still green).
 
 Manual dev smoke: `npm run dev` + `npm --prefix worker run dev`; log in with `dev-token-test` from `.dev.vars`; type an entry; reload; entry persists; IndexedDB shows a DB named `journal-<hex>` (browser devtools). Log out, log in with `dev-token-marina`; the test entry must NOT appear; IndexedDB shows a second DB.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/ package.json
