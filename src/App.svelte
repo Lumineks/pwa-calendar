@@ -6,6 +6,8 @@
   import WeekView from './routes/WeekView.svelte';
   import DayView from './routes/DayView.svelte';
   import { syncStart, syncStop } from './data/sync.ts';
+  import { initDb } from './data/db.ts';
+  import { namespaceFor } from './data/namespace.ts';
 
   // Strip trailing slash from BASE_URL to get a prefix for navigate() calls and
   // the Router basepath. In dev (BASE_URL='/') this is '', in production it is
@@ -44,17 +46,20 @@
     }
   }
 
-  // Phase 6: sync triggers follow the token. syncStart() is idempotent so a
-  // re-render with the same token value won't double-attach listeners. On
-  // logout (clearToken), syncStop tears down timers and listeners. The
-  // in-memory dirty set is preserved across token clears — if the user
-  // re-pastes the same token, queued edits resume.
+  // Sync + local DB follow the token, keyed by its account namespace.
+  // syncStart(ns) is idempotent so a re-render with the same token value won't
+  // double-attach listeners. On logout (clearToken), syncStop tears down timers
+  // and listeners and aborts any in-flight push. The in-memory dirty set is
+  // preserved across token clears — if the user re-pastes the SAME token,
+  // queued edits resume; a DIFFERENT token clears it (see syncStart).
   $effect(() => {
     if ($token === null) {
       syncStop();
       return;
     }
-    syncStart();
+    const ns = namespaceFor($token);
+    initDb(ns); // synchronous — resolves the db ready-latch BEFORE syncStart
+    syncStart(ns);
     return () => syncStop();
   });
 </script>

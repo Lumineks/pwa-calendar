@@ -8,8 +8,10 @@
  *   • push() drains the dirty set; per-key result is one of:
  *       - 200  → drop from dirty
  *       - 409  → server has a newer copy; overwrite Dexie via
- *                dbWriteFromServer (NOT putEntry — see db.ts) and drop
+ *                applyServerEntry → dbWriteFromServer (NOT putEntry — see
+ *                db.ts) and drop
  *       - 204/404 (delete) → drop (idempotent)
+ *       - 401  → retryable (logout / token-swap race), NOT a poison pill
  *       - 4xx (other) → poison pill; log and drop so we don't loop forever
  *       - NetworkError → leave in dirty; retry with exponential backoff
  *   • pull(range) reconciles a date range from the server into Dexie via
@@ -20,9 +22,10 @@
  *       - 'online'      → push() + pull()
  *       - 'visibility'  → pull() if visible AND online
  *
- * Persistence is intentionally minimal:
- *   localStorage 'journal:dirty'   → JSON map of date → 'put' | 'delete'
- *   localStorage 'journal:backoff' → numeric ms (capped)
+ * Everything persisted is namespaced by account (see ./namespace.ts), so two
+ * accounts on one device never share a queue:
+ *   localStorage 'journal:<ns>:dirty'   → JSON map of date → 'put' | 'delete'
+ *   localStorage 'journal:<ns>:backoff' → numeric ms (capped)
  *
  * No schema versioning yet; the keys are small and easy to discard if the
  * format ever changes. If you add fields, also bump a version key alongside.
@@ -31,21 +34,21 @@
 import {
   addWeeks,
   format,
+  parseISO,
   startOfISOWeek,
 } from 'date-fns';
+import { writable } from 'svelte/store';
 import * as api from './api.ts';
-import { isNetworkError } from './api.ts';
+import { isApiError, isNetworkError } from './api.ts';
 import {
   getEntry as dbGetEntry,
   dbWriteFromServer,
 } from './db.ts';
+import { nsKey } from './namespace.ts';
 
 // ── Types & constants ───────────────────────────────────────────────────
 
 export type Action = 'put' | 'delete';
-
-const LS_KEY_DIRTY = 'journal:dirty';
-const LS_KEY_BACKOFF = 'journal:backoff';
 
 const DEBOUNCE_MS = 3_000;
 const PULL_INTERVAL_MS = 3 * 60_000;
@@ -66,15 +69,28 @@ let pullTimer: ReturnType<typeof setInterval> | undefined;
 let onlineListener: (() => void) | undefined;
 let visibilityListener: (() => void) | undefined;
 
+let namespace: string | null = null;
+let runToken = 0; // bumped by syncStop/namespace change; aborts in-flight pushes
+
+export type InitState = 'idle' | 'initializing' | 'ready' | 'needs-network';
+export const initState = writable<InitState>('idle');
+
+const lsDirtyKey = (): string => nsKey(namespace ?? '?', 'dirty');
+const lsBackoffKey = (): string => nsKey(namespace ?? '?', 'backoff');
+
 // ── Persistence ─────────────────────────────────────────────────────────
 
 function persistDirty(): void {
+  // Before syncStart() hands us a namespace there is no correct key to write
+  // under — writing to a placeholder would leak one account's queue into a
+  // key the next account could hydrate from.
+  if (namespace === null) return;
   if (typeof localStorage === 'undefined') return;
   try {
     const obj: Record<string, Action> = {};
     for (const [k, v] of dirty) obj[k] = v;
-    localStorage.setItem(LS_KEY_DIRTY, JSON.stringify(obj));
-    localStorage.setItem(LS_KEY_BACKOFF, String(backoffMs));
+    localStorage.setItem(lsDirtyKey(), JSON.stringify(obj));
+    localStorage.setItem(lsBackoffKey(), String(backoffMs));
   } catch {
     // Quota or privacy-mode failures aren't recoverable here; in-memory state
     // remains correct for this session. Audit 2 may surface this if it bites.
@@ -82,9 +98,10 @@ function persistDirty(): void {
 }
 
 function hydrate(): void {
+  if (namespace === null) return;
   if (typeof localStorage === 'undefined') return;
   try {
-    const rawDirty = localStorage.getItem(LS_KEY_DIRTY);
+    const rawDirty = localStorage.getItem(lsDirtyKey());
     if (rawDirty !== null) {
       const parsed: unknown = JSON.parse(rawDirty);
       if (parsed !== null && typeof parsed === 'object') {
@@ -98,7 +115,7 @@ function hydrate(): void {
         }
       }
     }
-    const rawBackoff = localStorage.getItem(LS_KEY_BACKOFF);
+    const rawBackoff = localStorage.getItem(lsBackoffKey());
     if (rawBackoff !== null) {
       const n = Number(rawBackoff);
       if (Number.isFinite(n) && n >= BACKOFF_INITIAL_MS) {
@@ -108,15 +125,42 @@ function hydrate(): void {
   } catch {
     // Corrupt localStorage entries → start fresh.
     try {
-      localStorage.removeItem(LS_KEY_DIRTY);
-      localStorage.removeItem(LS_KEY_BACKOFF);
+      localStorage.removeItem(lsDirtyKey());
+      localStorage.removeItem(lsBackoffKey());
     } catch {
       // ignore
     }
   }
 }
 
-hydrate();
+// ── Server-originated entry writes + listener registry ──────────────────
+
+const entryListeners = new Set<(date: string) => void>();
+
+/**
+ * Subscribe to server-originated entry writes (pull reconciliation and 409
+ * LWW takeovers). Views use this to refresh a body they are already showing —
+ * Dexie writes are invisible to Svelte state on their own.
+ *
+ * Returns an unsubscribe function.
+ */
+export function onEntryUpdated(cb: (date: string) => void): () => void {
+  entryListeners.add(cb);
+  return () => entryListeners.delete(cb);
+}
+
+/**
+ * The ONLY path from a server value into Dexie. Wraps db.ts's back door so
+ * every server write — from pull() and from push()'s 409 branch alike —
+ * notifies the listener registry exactly once.
+ */
+async function applyServerEntry(
+  date: string,
+  value: { body: string; updatedAt: string; format?: 'html' },
+): Promise<void> {
+  await dbWriteFromServer(date, value);
+  for (const cb of entryListeners) cb(date);
+}
 
 // ── Public: markDirty ───────────────────────────────────────────────────
 
@@ -155,6 +199,12 @@ async function push(): Promise<void> {
   if (dirty.size === 0) return;
   pushInFlight = true;
 
+  // Abort guard: syncStop() and every namespace change bump runToken. Any
+  // await below can resume AFTER a logout or an account switch, at which
+  // point `dirty` belongs to a different account (or was cleared) — mutating
+  // or persisting it would cross the account boundary.
+  const myRun = runToken;
+
   // Snapshot the dirty set at the start of this run. Edits that arrive while
   // we're pushing add to `dirty` and will be picked up by the NEXT push (a
   // fresh schedulePush is triggered by their own markDirty call).
@@ -162,6 +212,7 @@ async function push(): Promise<void> {
   const networkFailures: string[] = [];
 
   for (const [date, action] of snapshot) {
+    if (myRun !== runToken) return;
     // The action could have changed (e.g. put then delete) between snapshot
     // and now. Use the current value, not the snapshot.
     const currentAction = dirty.get(date);
@@ -169,6 +220,7 @@ async function push(): Promise<void> {
 
     if (currentAction === 'put') {
       const local = await dbGetEntry(date);
+      if (myRun !== runToken) return;
       if (!local) {
         // Local row vanished between markDirty and now (probably a delete
         // race). Drop from dirty without contacting the server; the matching
@@ -177,18 +229,28 @@ async function push(): Promise<void> {
         continue;
       }
       try {
-        const result = await api.putEntry(date, local.body, local.updatedAt);
+        const result = await api.putEntry(
+          date,
+          local.body,
+          local.updatedAt,
+          local.format,
+        );
+        if (myRun !== runToken) return;
         if ('conflict' in result) {
           // Server has strictly-newer copy. LWW: take the server's version,
           // overwrite Dexie WITHOUT marking dirty (else infinite loop).
-          await dbWriteFromServer(date, result.server);
+          await applyServerEntry(date, result.server);
+          if (myRun !== runToken) return;
         }
         dirty.delete(date);
       } catch (e) {
-        if (isNetworkError(e)) {
+        if (myRun !== runToken) return;
+        if (isNetworkError(e) || (isApiError(e) && e.status === 401)) {
+          // 401 during logout/token-swap races must NOT poison-pill the
+          // entry (Audit-2 S8) — the write is retried under the right token.
           networkFailures.push(date);
         } else {
-          // Poison pill — 4xx (other than 409), 5xx, malformed JSON, etc.
+          // Poison pill — 4xx (other than 409/401), 5xx, malformed JSON, etc.
           // Drop so we don't spin forever. The local copy stays in Dexie.
           console.warn('[sync] drop put', date, e);
           dirty.delete(date);
@@ -197,9 +259,12 @@ async function push(): Promise<void> {
     } else {
       try {
         await api.deleteEntry(date);
+        if (myRun !== runToken) return;
         dirty.delete(date);
       } catch (e) {
-        if (isNetworkError(e)) {
+        if (myRun !== runToken) return;
+        if (isNetworkError(e) || (isApiError(e) && e.status === 401)) {
+          // Same 401 rule as the put branch above.
           networkFailures.push(date);
         } else {
           console.warn('[sync] drop delete', date, e);
@@ -208,6 +273,8 @@ async function push(): Promise<void> {
       }
     }
   }
+
+  if (myRun !== runToken) return;
 
   persistDirty();
 
@@ -252,17 +319,23 @@ async function push(): Promise<void> {
  * (b) call dbDeleteFromServer when a tombstone is newer than the local copy.
  */
 export async function pull(range?: { from: string; to: string }): Promise<void> {
+  // Same abort guard as push(): a pull started under account A must not write
+  // A's server payload into B's Dexie handle after a logout / account switch.
+  const myRun = runToken;
   try {
     if (!range) return;
     const { entries } = await api.listEntries(range.from, range.to);
+    if (myRun !== runToken) return;
     for (const [date, server] of Object.entries(entries)) {
+      if (myRun !== runToken) return;
       if (!DATE_RE.test(date)) continue;
       const local = await dbGetEntry(date);
+      if (myRun !== runToken) return;
       // LWW: take the server's copy iff it's strictly newer. Strict > matches
       // the Worker's 409 condition exactly, so the two ends agree on which
       // value "wins" given the same pair of timestamps.
       if (!local || server.updatedAt > local.updatedAt) {
-        await dbWriteFromServer(date, server);
+        await applyServerEntry(date, server);
       }
     }
   } catch (e) {
@@ -274,34 +347,75 @@ export async function pull(range?: { from: string; to: string }): Promise<void> 
   }
 }
 
+// ── View anchor ─────────────────────────────────────────────────────────
+
+let viewAnchor: string | null = null;
+
 /**
- * Current pull window — current ISO Monday ± 3 weeks = 7-week span. Bounded
- * payload (well under the 90-day soft cap) and lazy enough that WeekView nav
- * through nearby weeks renders without a round-trip on every step.
+ * Tell the sync layer which ISO Monday the user is currently looking at, so
+ * the pull window follows navigation instead of staying pinned to "today".
+ */
+export function setViewAnchor(isoMonday: string): void {
+  viewAnchor = isoMonday;
+}
+
+/**
+ * Current pull window — the viewed ISO Monday −3/+4 weeks = 7-week span.
+ * Bounded payload (well under the 90-day soft cap) and lazy enough that
+ * WeekView nav through nearby weeks renders without a round-trip on every
+ * step.
  */
 function currentPullRange(): { from: string; to: string } {
-  const monday = startOfISOWeek(new Date());
+  const anchorDate = viewAnchor ? parseISO(viewAnchor) : new Date();
+  const monday = startOfISOWeek(anchorDate);
   const from = format(addWeeks(monday, -3), 'yyyy-MM-dd');
   const to = format(addWeeks(monday, 4), 'yyyy-MM-dd');
   return { from, to };
 }
 
+// ── First-run initialization (Task A8 replaces this stub) ───────────────
+
+async function ensureInitialized(): Promise<void> {
+  initState.set('ready');
+}
+
 // ── Lifecycle: start/stop, called from App.svelte ───────────────────────
 
 /**
- * Begin background sync. Idempotent — calling syncStart() twice is a no-op.
- * Must be called only after a valid token is in the auth store (the api
- * client reads the token on every request).
+ * Begin background sync for account namespace `ns`. Idempotent — calling
+ * syncStart(ns) twice with the same namespace while running is a no-op. Must
+ * be called only after a valid token is in the auth store (the api client
+ * reads the token on every request) and after initDb(ns).
  *
  * What it does:
- *   1. Immediate range-pull so device-restore-from-KV works on launch.
- *   2. If dirty set already has entries (loaded from localStorage on a prior
+ *   1. On a namespace CHANGE, drop all in-memory queue state first (see the
+ *      comment inline) so no edit crosses accounts.
+ *   2. Hydrate the dirty set / backoff from this namespace's own keys.
+ *   3. Kick first-run initialization (Task A8).
+ *   4. Immediate range-pull so device-restore-from-KV works on launch.
+ *   5. If the dirty set has entries (loaded from localStorage on a prior
  *      crash/close), schedule a push so they drain.
- *   3. Start the 3-min periodic pull (only fires when visible + online).
- *   4. Listen for 'online' (flush + pull) and 'visibilitychange' (pull).
+ *   6. Start the 3-min periodic pull (only fires when visible + online).
+ *   7. Listen for 'online' (flush + pull) and 'visibilitychange' (pull).
  */
-export function syncStart(): void {
-  if (pullTimer !== undefined) return;
+export function syncStart(ns: string): void {
+  if (pullTimer !== undefined && namespace === ns) return; // already running
+
+  if (namespace !== null && namespace !== ns) {
+    // Namespace CHANGE: never let one account's queued edits push into
+    // another account. In-memory state is dropped; the old account's dirty
+    // set stays persisted under its own namespaced key and will resume when
+    // that token is used again.
+    syncStop(); // tear down the previous account's timers/listeners first
+    dirty.clear();
+    backoffMs = BACKOFF_INITIAL_MS;
+    runToken++;
+    initState.set('idle');
+  }
+  namespace = ns;
+  hydrate();
+
+  void ensureInitialized();
 
   const range = currentPullRange();
   void pull(range);
@@ -342,9 +456,13 @@ export function syncStart(): void {
 }
 
 /**
- * Tear down listeners and timers. Called on token clear (clearToken in
- * WeekView's "Выйти" button). In-memory dirty set is left intact — if the
- * user pastes the same token back later, queued edits will eventually flush.
+ * Tear down listeners and timers, and abort any in-flight push at its next
+ * checkpoint (runToken bump). Called on token clear (logout) and on the
+ * namespace-change path in syncStart.
+ *
+ * The in-memory dirty set is left intact — if the user pastes the SAME token
+ * back later, queued edits resume; if a different token arrives, syncStart's
+ * namespace-change branch clears it before anything can push.
  */
 export function syncStop(): void {
   if (pullTimer !== undefined) {
@@ -356,6 +474,10 @@ export function syncStop(): void {
     scheduledTimer = undefined;
   }
   pushScheduled = false;
+  // Bump BEFORE clearing pushInFlight: an in-flight push sees the mismatch at
+  // its next checkpoint and returns without touching `dirty` or localStorage.
+  runToken++;
+  pushInFlight = false;
   if (onlineListener && typeof window !== 'undefined') {
     window.removeEventListener('online', onlineListener);
   }

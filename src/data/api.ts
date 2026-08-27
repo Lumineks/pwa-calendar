@@ -15,7 +15,7 @@
  *     copy for LWW merge.
  *
  * Response shapes mirror worker/src/index.ts. Worker contracts:
- *   - GET    /health              → 200 { ok: true } | 401
+ *   - GET    /health              → 200 { ok: true, account: string } | 401
  *   - GET    /entries             → 200 { index: string[] }
  *   - GET    /entries?from&to     → 200 { index: string[], entries: {...} }
  *   - GET    /entries/:date       → 200 { body, updatedAt } | 404
@@ -30,6 +30,8 @@ import { token } from '../state/auth.ts';
 export interface EntryValue {
   body: string;
   updatedAt: string;
+  /** Rich-text marker. 'html' is the ONLY permitted value; absent = plain. */
+  format?: 'html';
 }
 
 export class ApiError extends Error {
@@ -129,14 +131,16 @@ async function readJsonOrThrow(res: Response): Promise<unknown> {
  *
  * Throws ApiError(401) on bad token, NetworkError on connectivity failure.
  */
-export async function health(tokenOverride?: string): Promise<{ ok: true }> {
+export async function health(
+  tokenOverride?: string,
+): Promise<{ ok: true; account: string }> {
   const res = await apiFetch(
     '/health',
     { method: 'GET' },
     tokenOverride !== undefined ? { tokenOverride } : {},
   );
   const data = await readJsonOrThrow(res);
-  return data as { ok: true };
+  return data as { ok: true; account: string };
 }
 
 export async function listIndex(): Promise<{ index: string[] }> {
@@ -188,10 +192,11 @@ export async function putEntry(
   date: string,
   body: string,
   updatedAt: string,
+  format?: 'html',
 ): Promise<PutEntryResult> {
   const res = await apiFetch(`/entries/${date}`, {
     method: 'PUT',
-    body: JSON.stringify({ body, updatedAt }),
+    body: JSON.stringify({ body, updatedAt, ...(format ? { format } : {}) }),
   });
   if (res.status === 409) {
     const payload = (await readJson(res)) as { server: EntryValue } | null;
