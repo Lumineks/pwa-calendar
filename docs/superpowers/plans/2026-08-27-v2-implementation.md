@@ -856,7 +856,7 @@ git commit -m "feat(worker): account migration script (backup/copy/verify/diff/r
 - Produces: `namespaceFor(token: string): string` — synchronous, 8-hex FNV-1a; `nsKey(ns: string, suffix: string): string` → `journal:<ns>:<suffix>`; `dbNameFor(ns: string): string` → `journal-<ns>`. Also `MAX_BODY_BYTES`, `utf8ByteLength` (client copies, values identical to worker's).
 - NOT `crypto.subtle` — must work synchronously and over LAN-IP dev (non-secure context). This hash is a namespace discriminator, not a security boundary (isolation is enforced by the worker).
 
-- [ ] **Step 1: Install test stack + engines**
+- [x] **Step 1: Install test stack + engines**
 
 ```bash
 npm i -D vitest@^4.1.0 jsdom
@@ -877,7 +877,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 2: Failing test**
+- [x] **Step 2: Failing test**
 
 Create `src/data/namespace.test.ts`:
 
@@ -906,7 +906,7 @@ describe('key builders', () => {
 
 Run: `npm test` — expect FAIL (module missing).
 
-- [ ] **Step 3: Implement `src/data/namespace.ts`**
+- [x] **Step 3: Implement `src/data/namespace.ts`**
 
 ```ts
 /**
@@ -947,9 +947,9 @@ export function utf8ByteLength(s: string): number {
 }
 ```
 
-- [ ] **Step 4: Run — expect PASS**, then `npm run check`.
+- [x] **Step 4: Run — expect PASS**, then `npm run check`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json package-lock.json vitest.config.ts src/data/namespace.ts src/data/namespace.test.ts src/data/limits.ts
