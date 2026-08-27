@@ -1,4 +1,5 @@
 import { verifyBearer } from './tokens';
+import { MAX_BODY_BYTES, utf8ByteLength } from './limits';
 
 export interface Env {
   JOURNAL: KVNamespace;
@@ -9,6 +10,7 @@ export interface Env {
 interface EntryValue {
   body: string;
   updatedAt: string;
+  format?: 'html';
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -16,6 +18,9 @@ interface EntryValue {
 // Month: 01–12, Day: 01–31 (calendar-range validation; not per-month leap checks)
 const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const UPDATED_AT_RE = /^\d{4}-\d{2}-\d{2}T/;
+
+const entryKey = (account: string, date: string): string => `a:${account}:entries:${date}`;
+const indexKey = (account: string): string => `a:${account}:index`;
 
 function isValidDate(s: string): boolean {
   return DATE_RE.test(s);
@@ -50,8 +55,8 @@ function corsHeaders(origin: string): Record<string, string> {
 
 // ── KV helpers ────────────────────────────────────────────────────────────────
 
-async function getIndex(kv: KVNamespace): Promise<string[]> {
-  const raw = await kv.get("index");
+async function getIndex(account: string, kv: KVNamespace): Promise<string[]> {
+  const raw = await kv.get(indexKey(account));
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -61,8 +66,8 @@ async function getIndex(kv: KVNamespace): Promise<string[]> {
   }
 }
 
-async function putIndex(kv: KVNamespace, index: string[]): Promise<void> {
-  await kv.put("index", JSON.stringify(index));
+async function putIndex(account: string, kv: KVNamespace, index: string[]): Promise<void> {
+  await kv.put(indexKey(account), JSON.stringify(index));
 }
 
 /** Insert date into a sorted, deduplicated index array. */
@@ -77,10 +82,11 @@ function removeFromIndex(index: string[], date: string): string[] {
 }
 
 async function getEntry(
+  account: string,
   kv: KVNamespace,
   date: string,
 ): Promise<EntryValue | null> {
-  const raw = await kv.get(`entries:${date}`);
+  const raw = await kv.get(entryKey(account, date));
   if (!raw) return null;
   try {
     return JSON.parse(raw) as EntryValue;
@@ -91,11 +97,12 @@ async function getEntry(
 
 // ── Route handlers ────────────────────────────────────────────────────────────
 
-async function handleHealth(allowedOrigin: string): Promise<Response> {
-  return jsonResponse({ ok: true }, 200, allowedOrigin);
+async function handleHealth(account: string, allowedOrigin: string): Promise<Response> {
+  return jsonResponse({ ok: true, account }, 200, allowedOrigin);
 }
 
 async function handleGetEntries(
+  account: string,
   url: URL,
   env: Env,
   allowedOrigin: string,
@@ -120,7 +127,7 @@ async function handleGetEntries(
     return jsonResponse({ error: "Invalid 'to' date" }, 400, allowedOrigin);
   }
 
-  const index = await getIndex(env.JOURNAL);
+  const index = await getIndex(account, env.JOURNAL);
 
   if (from === null || to === null) {
     return jsonResponse({ index }, 200, allowedOrigin);
@@ -129,7 +136,7 @@ async function handleGetEntries(
   // Range query: filter index, fetch all entries in parallel
   const inRange = index.filter((d) => d >= from && d <= to);
   const fetched = await Promise.all(
-    inRange.map((d) => getEntry(env.JOURNAL, d)),
+    inRange.map((d) => getEntry(account, env.JOURNAL, d)),
   );
 
   const entries: Record<string, EntryValue> = {};
@@ -145,6 +152,7 @@ async function handleGetEntries(
 }
 
 async function handleGetEntry(
+  account: string,
   date: string,
   env: Env,
   allowedOrigin: string,
@@ -152,7 +160,7 @@ async function handleGetEntry(
   if (!isValidDate(date)) {
     return jsonResponse({ error: "Invalid date format" }, 400, allowedOrigin);
   }
-  const entry = await getEntry(env.JOURNAL, date);
+  const entry = await getEntry(account, env.JOURNAL, date);
   if (!entry) {
     return jsonResponse({ error: "Not found" }, 404, allowedOrigin);
   }
@@ -160,6 +168,7 @@ async function handleGetEntry(
 }
 
 async function handlePutEntry(
+  account: string,
   date: string,
   request: Request,
   env: Env,
@@ -199,23 +208,32 @@ async function handlePutEntry(
     );
   }
 
+  const rec = body as Record<string, unknown>;
+  if ('format' in rec && rec['format'] !== 'html') {
+    return jsonResponse({ error: "format must be 'html' when present" }, 400, allowedOrigin);
+  }
+  if (utf8ByteLength((rec['body'] as string)) > MAX_BODY_BYTES) {
+    return jsonResponse({ error: 'Body too large' }, 413, allowedOrigin);
+  }
+
   // LWW: if server copy is strictly newer, reject with 409
-  const current = await getEntry(env.JOURNAL, date);
+  const current = await getEntry(account, env.JOURNAL, date);
   if (current !== null && current.updatedAt > incoming.updatedAt) {
     return jsonResponse({ server: current }, 409, allowedOrigin);
   }
 
   // Write entry and update index atomically (best-effort; KV has eventual consistency)
-  const [index] = await Promise.all([getIndex(env.JOURNAL)]);
+  const [index] = await Promise.all([getIndex(account, env.JOURNAL)]);
   await Promise.all([
-    env.JOURNAL.put(`entries:${date}`, JSON.stringify(incoming)),
-    putIndex(env.JOURNAL, insertSorted(index, date)),
+    env.JOURNAL.put(entryKey(account, date), JSON.stringify(incoming)),
+    putIndex(account, env.JOURNAL, insertSorted(index, date)),
   ]);
 
   return jsonResponse({ ok: true }, 200, allowedOrigin);
 }
 
 async function handleDeleteEntry(
+  account: string,
   date: string,
   env: Env,
   allowedOrigin: string,
@@ -224,13 +242,13 @@ async function handleDeleteEntry(
     return jsonResponse({ error: "Invalid date format" }, 400, allowedOrigin);
   }
 
-  const current = await getEntry(env.JOURNAL, date);
+  const current = await getEntry(account, env.JOURNAL, date);
 
   // Always prune index (defensive), even if the entry didn't exist
-  const index = await getIndex(env.JOURNAL);
+  const index = await getIndex(account, env.JOURNAL);
   await Promise.all([
-    env.JOURNAL.delete(`entries:${date}`),
-    putIndex(env.JOURNAL, removeFromIndex(index, date)),
+    env.JOURNAL.delete(entryKey(account, date)),
+    putIndex(account, env.JOURNAL, removeFromIndex(index, date)),
   ]);
 
   if (!current) {
@@ -269,19 +287,18 @@ export default {
       if (account === null) {
         return jsonResponse({ error: "Unauthorized" }, 401, allowedOrigin);
       }
-      void account; // threaded into handlers in Task A4
 
       // ── Route dispatch ──────────────────────────────────────────────────────
 
       // GET /health
       if (path === "/health" && method === "GET") {
-        return handleHealth(allowedOrigin);
+        return handleHealth(account, allowedOrigin);
       }
 
       // /entries (no date segment)
       if (path === "/entries") {
         if (method === "GET") {
-          return handleGetEntries(url, env, allowedOrigin);
+          return handleGetEntries(account, url, env, allowedOrigin);
         }
         return jsonResponse({ error: "Method not allowed" }, 405, allowedOrigin, {
           Allow: "GET",
@@ -292,9 +309,9 @@ export default {
       const entriesDateMatch = path.match(/^\/entries\/([^/]+)$/);
       if (entriesDateMatch) {
         const date = entriesDateMatch[1] ?? "";
-        if (method === "GET") return handleGetEntry(date, env, allowedOrigin);
-        if (method === "PUT") return handlePutEntry(date, request, env, allowedOrigin);
-        if (method === "DELETE") return handleDeleteEntry(date, env, allowedOrigin);
+        if (method === "GET") return handleGetEntry(account, date, env, allowedOrigin);
+        if (method === "PUT") return handlePutEntry(account, date, request, env, allowedOrigin);
+        if (method === "DELETE") return handleDeleteEntry(account, date, env, allowedOrigin);
         return jsonResponse({ error: "Method not allowed" }, 405, allowedOrigin, {
           Allow: "GET, PUT, DELETE",
         });
