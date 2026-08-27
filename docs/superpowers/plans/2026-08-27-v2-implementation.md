@@ -46,7 +46,7 @@
 **Interfaces:**
 - Produces: CI contract for all later tasks — `test` job runs `npm run check` + `npm test --if-present` (root) and `npm test --if-present` (worker); `deploy-worker` runs only on manual `workflow_dispatch`.
 
-- [ ] **Step 1: Rewrite the workflow**
+- [x] **Step 1: Rewrite the workflow**
 
 Replace the `jobs:` section of `.github/workflows/deploy.yml` with:
 
@@ -124,11 +124,11 @@ jobs:
 
 Keep the existing `on:`, `permissions:`, `concurrency:` blocks unchanged (`workflow_dispatch: {}` is already present in `on:`).
 
-- [ ] **Step 2: Validate YAML locally**
+- [x] **Step 2: Validate YAML locally**
 
 Run: `npx --yes yaml-lint .github/workflows/deploy.yml || node -e "require('js-yaml')"` — if neither tool is available, visually verify indentation and run `git diff` to review.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .github/workflows/deploy.yml
