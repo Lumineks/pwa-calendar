@@ -45,25 +45,55 @@ function accountIndex() {
 }
 const upd = (raw) => { try { return JSON.parse(raw).updatedAt ?? ''; } catch { return ''; } };
 
-async function retryGet(key, attempts = 4, delayMs = 5000) {
+// Retries the destination GET until it matches `expected` (real KV eventual
+// consistency can return a stale-but-successful read with no thrown error,
+// so retrying only on exceptions is not enough — retry on mismatch too).
+// Returns the last-observed value (possibly undefined/mismatched) once
+// attempts are exhausted; the caller decides pass/fail.
+async function retryGet(key, expected, attempts = 4, delayMs = 5000) {
+  let val;
   for (let i = 0; i < attempts; i++) {
-    try { return getValue(key); } catch (e) {
-      if (i === attempts - 1) throw e;
+    try { val = getValue(key); } catch { val = undefined; }
+    if (val === expected) return val;
+    if (i < attempts - 1) {
       console.log(`  retry ${key} in ${delayMs}ms (KV eventual consistency)`);
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
+  return val;
 }
 
 if (mode === 'backup') {
   const keys = listAllKeys();
   const dump = {};
   for (const k of keys) dump[k] = getValue(k);
+
+  // Completeness cross-check: list() could silently truncate. Every date
+  // referenced by either index must have its entry key present in the dump.
+  const parseIndexFromDump = (key) => {
+    const raw = dump[key];
+    if (raw === undefined) return [];
+    try { return JSON.parse(raw); } catch { return []; }
+  };
+  const legacyDates = parseIndexFromDump('index');
+  const accountDates = parseIndexFromDump(`a:${ACCOUNT}:index`);
+  const missing = [];
+  for (const d of legacyDates) {
+    if (!(`entries:${d}` in dump)) missing.push(`entries:${d}`);
+  }
+  for (const d of accountDates) {
+    if (!(`a:${ACCOUNT}:entries:${d}` in dump)) missing.push(`a:${ACCOUNT}:entries:${d}`);
+  }
+  if (missing.length) {
+    console.error(`BACKUP INCOMPLETE: ${missing.length} key(s) referenced by an index are missing from the dump (list() likely truncated):`, missing);
+    process.exit(1);
+  }
+
   const dir = join(homedir(), 'journal-kv-backups');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `kv-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
   writeFileSync(file, JSON.stringify(dump, null, 2));
-  console.log(`Backed up ${keys.length} keys to ${file}`);
+  console.log(`Backed up ${keys.length} keys to ${file} (legacy index ${legacyDates.length}, account index ${accountDates.length}, total keys ${keys.length}).`);
   console.log('>>> Copy this file to a second safe location NOW, before proceeding.');
 } else if (mode === 'copy') {
   const idx = legacyIndex();
@@ -89,7 +119,7 @@ if (mode === 'backup') {
   const bad = [];
   for (const d of expected) {
     const src = getValue(`entries:${d}`);
-    const dst = await retryGet(`a:${ACCOUNT}:entries:${d}`);
+    const dst = await retryGet(`a:${ACCOUNT}:entries:${d}`, src);
     if (src === dst) ok++;
     else bad.push(d);
   }
@@ -106,7 +136,12 @@ if (mode === 'backup') {
   const idx = legacyIndex();
   const dstIdx = accountIndex();
   const dates = [...new Set([...idx, ...dstIdx])].sort();
-  let pending = 0;
+
+  // Pass 1 (scan-only, NO writes): walk every date, enforcing the hard-stop
+  // across the whole set before any write happens. Without this, an earlier
+  // date could be written and only a later date trip the hard-stop, leaving
+  // partial writes behind a message that claims none occurred.
+  const pending = [];
   for (const d of dates) {
     let src = null; let dst = null;
     try { src = getValue(fwd ? `entries:${d}` : `a:${ACCOUNT}:entries:${d}`); } catch { /* absent */ }
@@ -117,21 +152,30 @@ if (mode === 'backup') {
         console.error(`HARD STOP: destination a:${ACCOUNT}:entries:${d} is NEWER than legacy — direction assumption wrong. No writes performed.`);
         process.exit(1);
       }
-      continue; // reverse mode: legacy newer -> nothing to do
+      continue; // reverse mode: legacy newer -> nothing to do for this date
     }
     if (dst === null || upd(src) > upd(dst)) {
-      pending++;
-      console.log(`  ${APPLY ? 'copying' : 'would copy'} ${d} (${upd(src)} > ${dst === null ? 'absent' : upd(dst)})`);
-      if (APPLY) {
-        putValue(fwd ? `a:${ACCOUNT}:entries:${d}` : `entries:${d}`, src);
-        if (fwd) {
-          const merged = [...new Set([...accountIndex(), d])].sort();
-          putValue(`a:${ACCOUNT}:index`, JSON.stringify(merged));
-        }
-      }
+      pending.push({ d, src, dst });
     }
   }
-  console.log(`${mode}: ${pending} entries ${APPLY ? 'copied' : 'pending (run with --apply)'}.`);
+
+  // Pass 2 (apply/report), only reached once the full scan above is clean.
+  const copiedDates = [];
+  for (const { d, src, dst } of pending) {
+    console.log(`  ${APPLY ? 'copying' : 'would copy'} ${d} (${upd(src)} > ${dst === null ? 'absent' : upd(dst)})`);
+    if (APPLY) {
+      putValue(fwd ? `a:${ACCOUNT}:entries:${d}` : `entries:${d}`, src);
+      copiedDates.push(d);
+    }
+  }
+  // Single index write after the loop (not once per date): a per-date
+  // GET+merge+PUT of the shared account index is a lost-update race under
+  // real KV propagation delay. reverse never touches the account index.
+  if (fwd && copiedDates.length) {
+    const merged = [...new Set([...accountIndex(), ...copiedDates])].sort();
+    putValue(`a:${ACCOUNT}:index`, JSON.stringify(merged));
+  }
+  console.log(`${mode}: ${pending.length} entries ${APPLY ? 'copied' : 'pending (run with --apply)'}.`);
 } else {
   console.log('Usage: node scripts/migrate-accounts.mjs <backup|copy|verify|diff|reverse> [--apply] [--env dev]');
   process.exit(2);
