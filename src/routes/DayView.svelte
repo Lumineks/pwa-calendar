@@ -75,17 +75,25 @@
    * Russian-formatted date header, e.g. "Понедельник, 11 мая".
    * date-fns/ru returns lowercase weekday names ("понедельник"), so we
    * capitalize the first character to match journal-header convention.
+   *
+   * F1: pulled out to a plain function (not a `$derived`) so the neighbour
+   * static panels can format prev/next off the SAME formatter — no second
+   * date-formatting implementation to drift out of sync with this one.
    */
-  const russianDate = $derived.by(() => {
-    if (!validInput) return '';
-    const formatted = format(parsed, 'EEEE, d MMMM', { locale: ru });
+  function formatRussianDate(d: Date): string {
+    const formatted = format(d, 'EEEE, d MMMM', { locale: ru });
     return formatted.charAt(0).toUpperCase() + formatted.slice(1);
-  });
+  }
+  const russianDate = $derived(validInput ? formatRussianDate(parsed) : '');
 
   // ---- Swipe neighbours (B7) ----
 
-  const prevDateStr = $derived(format(addDays(parsed, -1), 'yyyy-MM-dd'));
-  const nextDateStr = $derived(format(addDays(parsed, 1), 'yyyy-MM-dd'));
+  const prevDate = $derived(addDays(parsed, -1));
+  const nextDate = $derived(addDays(parsed, 1));
+  const prevDateStr = $derived(format(prevDate, 'yyyy-MM-dd'));
+  const nextDateStr = $derived(format(nextDate, 'yyyy-MM-dd'));
+  const prevRussianDate = $derived(validInput ? formatRussianDate(prevDate) : '');
+  const nextRussianDate = $derived(validInput ? formatRussianDate(nextDate) : '');
 
   /**
    * Sanitized preview HTML for the two neighbouring days, keyed by date.
@@ -191,6 +199,11 @@
   let initialHtml = $state<string | null>(null);
   let richEditor = $state<RichEditor | null>(null);
   let activePen = $state<string>(PALETTE[0].css);
+  /** F2: mirrors the editor's live `bold` mark state, driven by RichEditor's
+   * `onSelectionState` prop. Reset to false whenever the editor is torn down
+   * (see the load effect below) so a stale "bold" indicator can't survive a
+   * date change into a day whose editor hasn't reported in yet. */
+  let boldActive = $state(false);
 
   type SaveState = 'saved' | 'saving' | 'error';
   let saveState = $state<SaveState>('saved');
@@ -261,6 +274,7 @@
     // Unmount the editor for the duration of the load so the keyed {#await}
     // block can never show the PREVIOUS date's document under the new header.
     initialHtml = null;
+    boldActive = false; // stale mark state must not survive into the new day
     void getEntry(target).then((entry: Entry | undefined) => {
       if (cancelled) return;
       const html = toEditorHtml(entry);
@@ -467,6 +481,11 @@
     richEditor?.applyPen(css);
   }
 
+  /** Same pointerup-not-click rationale as pickPen (tiptap#7514). */
+  function toggleBold(): void {
+    richEditor?.toggleBold();
+  }
+
   function goBack(): void {
     navigate(`${base}/week/${isoMondayOfDate}`);
   }
@@ -477,6 +496,61 @@
 </script>
 
 {#if validInput}
+  <!-- F1: the neighbour panels must be visually IDENTICAL to the live panel
+       below, just inert — same header/palette/paper markup and classes, so
+       the paper area starts at the exact same y and the incoming page's
+       ruled lines line up with the current page's DURING the drag, not only
+       after the commit reloads it. `inert` (behavioural — no tab stops, no
+       SR announcements) plus `.day-static`'s pointer-events:none (belt-and-
+       suspenders, mirrors WeekView's offscreen-panel treatment) keep it
+       fully non-interactive despite reusing live-panel markup.
+
+       Declared here, OUTSIDE <SwipePager>'s tags: a {#snippet} declared
+       directly inside a component's opening/closing tags becomes a named
+       snippet PROP of that component (that's what `prev`/`current`/`next`
+       below are) — SwipePager has no `staticDayPanel` prop, so this must sit
+       above it and be invoked via {@render} instead. -->
+  {#snippet staticDayPanel(headerDate: string, htmlKey: string)}
+    <div class="day-view day-static" aria-hidden="true" inert>
+      <header class="header">
+        <button type="button" class="back" aria-label="Назад">
+          <span aria-hidden="true">←</span>
+          <span>Назад</span>
+        </button>
+        <h1 class="date" lang="ru">{headerDate}</h1>
+        <span class="save-indicator state-saved" aria-live="polite" role="status">
+          {SAVE_LABEL.saved}
+        </span>
+      </header>
+
+      <div class="palette" role="toolbar" aria-label="Цвет текста">
+        {#each PALETTE as pen (pen.id)}
+          <button
+            type="button"
+            class={['pen', pen.css === PALETTE[0].css && 'is-active']}
+            style={`--pen: ${pen.css}`}
+            aria-label={pen.label}
+            aria-pressed={pen.css === PALETTE[0].css}
+          ></button>
+        {/each}
+        <button type="button" class="bold-btn" aria-label="Жирный" aria-pressed="false">
+          Ж
+        </button>
+      </div>
+
+      <div class="paper editor-pane">
+        <!-- Same class/structure as the CURRENT panel's mount-gap
+             placeholder below — .editor-placeholder already mirrors
+             .rich-editor-content's padding/font/line-height, so reusing it
+             here (rather than a bespoke class) is the alignment mechanism,
+             not hand-tuned offsets. -->
+        <div class="editor-placeholder" lang="ru">
+          {@html neighborHtml[htmlKey] ?? ''}
+        </div>
+      </div>
+    </div>
+  {/snippet}
+
   <!-- The pager owns the navigation animation now (v1's transition:fly is
        gone): the neighbour panels are real, finger-following paper, and
        committing the gesture navigates. -->
@@ -501,9 +575,7 @@
     }}
   >
     {#snippet prev()}
-      <div class="day-view day-static" aria-hidden="true">
-        <div class="paper static-paper">{@html neighborHtml[prevDateStr] ?? ''}</div>
-      </div>
+      {@render staticDayPanel(prevRussianDate, prevDateStr)}
     {/snippet}
 
     {#snippet current()}
@@ -544,6 +616,23 @@
               }}
             ></button>
           {/each}
+          <!-- F2: same additive pointerup+keydown pattern as the pens above
+               (tiptap#7514 — click races tiptap's own pointer handling). -->
+          <button
+            type="button"
+            class={['bold-btn', boldActive && 'is-active']}
+            aria-label="Жирный"
+            aria-pressed={boldActive}
+            onpointerup={() => toggleBold()}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleBold();
+              }
+            }}
+          >
+            Ж
+          </button>
         </div>
 
         <div class="paper editor-pane">
@@ -554,6 +643,7 @@
                   bind:this={richEditor}
                   initialHtml={initialHtml}
                   onUpdate={handleEditorUpdate}
+                  onSelectionState={(s) => { boldActive = s.bold; }}
                 />
               {/await}
             {/key}
@@ -573,9 +663,7 @@
     {/snippet}
 
     {#snippet next()}
-      <div class="day-view day-static" aria-hidden="true">
-        <div class="paper static-paper">{@html neighborHtml[nextDateStr] ?? ''}</div>
-      </div>
+      {@render staticDayPanel(nextRussianDate, nextDateStr)}
     {/snippet}
   </SwipePager>
 {/if}
@@ -601,31 +689,26 @@
     color: #2c2412;
   }
 
-  /* Neighbour panels: a plain sheet of ruled paper showing the day's text, no
-   * header, no palette, no editor. Non-interactive — touches on them belong to
-   * the pager gesture, never to the (off-screen) content. */
+  /* Neighbour panels (F1): the SAME header/palette/paper markup as the live
+   * panel — reusing those classes verbatim is what keeps the ruled lines
+   * aligned during the drag (see staticDayPanel's doc comment above the
+   * template) — just rendered inert. `inert` on the wrapper (behavioural: no
+   * tab stops, no SR announcements) plus pointer-events:none here (belt-
+   * and-suspenders, mirrors WeekView's .offscreen-panel) keep touches routed
+   * to the pager gesture, never to the (off-screen) content. */
   .day-static {
     pointer-events: none;
   }
 
-  .static-paper {
-    flex: 1 1 auto;
-    padding: 48px 18px 0;
-    font-size: 16px;
-    line-height: var(--paper-line-height);
-    overflow: hidden;
-  }
-
-  .static-paper :global(p) {
-    margin: 0;
-    line-height: var(--paper-line-height);
-  }
-
-  /* Stand-in for the editor surface during the mount gap. Every value here is
-   * copied from RichEditor's .rich-editor-content (padding, font stack, 16px
-   * floor, line-height, colour) so the text does not shift by a pixel when the
-   * real editor replaces it — the swap should be invisible. .editor-pane
-   * already draws the ruled lines, so this must NOT carry .paper as well. */
+  /* Stand-in for the editor surface: used by the CURRENT panel during the
+   * mount gap, and by BOTH neighbour panels for their entire (inert)
+   * lifetime (F1). Every value here is copied from RichEditor's
+   * .rich-editor-content (padding, font stack, 16px floor, line-height,
+   * colour) so the text does not shift by a pixel when the real editor
+   * replaces it in the current-panel case, and so a neighbour's ruled lines
+   * land exactly where the current panel's do once it becomes current.
+   * .editor-pane already draws the ruled lines, so this must NOT carry
+   * .paper as well. */
   .editor-placeholder {
     flex: 1 1 auto;
     width: 100%;
@@ -753,6 +836,38 @@
   }
 
   .pen:focus-visible {
+    outline: 2px solid #c43c3c;
+    outline-offset: 2px;
+  }
+
+  /* F2: bold toggle — same row, same footprint as the pens, but square-ish
+   * (not a colour dot) and carrying the "Ж" glyph in bold weight. Same
+   * pointerup-not-click rationale as the pens (tiptap#7514, see .palette
+   * comment above) and the same .is-active treatment for consistency. */
+  .bold-btn {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    border: 2px solid rgba(70, 60, 35, 0.18);
+    background: var(--paper-fill, #fbf6e9);
+    color: #2c2412;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .bold-btn.is-active {
+    border-color: #2c2412;
+    box-shadow: 0 0 0 2px rgba(44, 36, 18, 0.25);
+    background: rgba(44, 36, 18, 0.08);
+  }
+
+  .bold-btn:focus-visible {
     outline: 2px solid #c43c3c;
     outline-offset: 2px;
   }

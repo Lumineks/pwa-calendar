@@ -78,6 +78,26 @@ describe('sanitizeHtml', () => {
     // spanless "<p>bad()keep</p>".
     expect(out).toContain('<span');
   });
+
+  it('keeps strong intact (F2 bold)', () => {
+    const out = sanitizeHtml('<p><strong>x</strong></p>');
+    expect(out).toContain('<strong>x</strong>');
+  });
+
+  it('strips ALL attributes off strong, including a palette color (not allowlisted for the tag)', () => {
+    const out = sanitizeHtml('<strong style="color:#ff0000" onclick="x()">x</strong>');
+    expect(out).toContain('<strong>x</strong>');
+    expect(out).not.toContain('style');
+    expect(out).not.toContain('onclick');
+    expect(out).not.toContain('color');
+  });
+
+  it('strips <b> (not allowlisted) but keeps its text', () => {
+    const out = sanitizeHtml('<b>x</b>');
+    expect(out).not.toContain('<b>');
+    expect(out).not.toContain('</b>');
+    expect(out).toContain('x');
+  });
 });
 
 describe('plainToHtml / isEmptyHtml / toEditorHtml', () => {

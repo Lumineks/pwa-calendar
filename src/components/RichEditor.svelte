@@ -5,15 +5,16 @@
   import Paragraph from '@tiptap/extension-paragraph';
   import Text from '@tiptap/extension-text';
   import { TextStyle, Color } from '@tiptap/extension-text-style';
+  import Bold from '@tiptap/extension-bold';
   import { UndoRedo } from '@tiptap/extensions';
   import { sanitizeHtml } from '../data/sanitize.ts';
 
   /**
-   * RichEditor — a deliberately minimal tiptap editor: paragraphs, text and a
-   * colour mark, nothing else. Everything that reaches persistence goes
-   * through `sanitizeHtml` (paste path here; the read path in
-   * `toEditorHtml`), so the schema and the sanitizer allowlist agree:
-   * p / br / span[style="color: …"] and nothing more.
+   * RichEditor — a deliberately minimal tiptap editor: paragraphs, text, a
+   * colour mark and a bold mark, nothing else. Everything that reaches
+   * persistence goes through `sanitizeHtml` (paste path here; the read path
+   * in `toEditorHtml`), so the schema and the sanitizer allowlist agree:
+   * p / br / span[style="color: …"] / strong and nothing more.
    *
    * The component owns NO save logic. It reports every document change up via
    * `onUpdate(html)`; DayView keeps the authoritative mirror and the debounce.
@@ -30,8 +31,12 @@
   interface Props {
     initialHtml: string;
     onUpdate: (html: string) => void;
+    /** Fires on every selection change AND every transaction (see onMount)
+     * so DayView can mirror live mark state (currently just `bold`) into its
+     * palette-row button without polling. */
+    onSelectionState?: (s: { bold: boolean }) => void;
   }
-  let { initialHtml, onUpdate }: Props = $props();
+  let { initialHtml, onUpdate, onSelectionState }: Props = $props();
 
   let host: HTMLDivElement;
   let editor: Editor | null = null;
@@ -39,7 +44,7 @@
   onMount(() => {
     editor = new Editor({
       element: host,
-      extensions: [Document, Paragraph, Text, TextStyle, Color, UndoRedo],
+      extensions: [Document, Paragraph, Text, TextStyle, Color, Bold, UndoRedo],
       content: initialHtml,
       editorProps: {
         attributes: { class: 'rich-editor-content', lang: 'ru', 'aria-label': 'Запись на день' },
@@ -47,6 +52,18 @@
       },
       onUpdate: ({ editor: e }) => {
         onUpdate(e.getHTML());
+      },
+      // `onSelectionUpdate` alone misses the case that matters most for a
+      // toolbar button: toggling bold on a COLLAPSED caret changes the
+      // stored mark (what typing next will produce) without changing the
+      // selection range at all, so it never fires. `onTransaction` fires for
+      // every transaction — including that one — so both are wired; either
+      // can be redundant with the other but neither alone is sufficient.
+      onSelectionUpdate: ({ editor: e }) => {
+        onSelectionState?.({ bold: e.isActive('bold') });
+      },
+      onTransaction: ({ editor: e }) => {
+        onSelectionState?.({ bold: e.isActive('bold') });
       },
     });
     return () => {
@@ -62,6 +79,13 @@
     // Works for both cases: with a selection → colors it; collapsed caret →
     // sets the stored mark so subsequent typing uses the pen.
     editor?.chain().focus().setColor(css).run();
+  }
+  /** Same "works with a selection or a collapsed caret" shape as applyPen. */
+  export function toggleBold(): void {
+    editor?.chain().focus().toggleBold().run();
+  }
+  export function isBoldActive(): boolean {
+    return editor?.isActive('bold') ?? false;
   }
   /**
    * O(1) emptiness check on ProseMirror's own document — `isNodeEmpty` on the

@@ -3,12 +3,13 @@
  * user-authored HTML next to a bearer token in localStorage.
  *
  * Strategy: DOMPurify (private instance) with a tight allowlist
- * (p, br, span), span attributes rebuilt from scratch, colors validated via
- * CSSOM round-trip against the palette, nesting depth bounded by a post-walk
- * pass over DOMPurify's own (already-clean) output fragment, and a
- * sanitize-twice stability check (mXSS guard for the string→{@html} sink).
- * Fails closed (never identity-passes dirty markup) when no functional DOM
- * is available.
+ * (p, br, span, strong), span attributes rebuilt from scratch (strong is
+ * always left attributeless — the non-SPAN branch of the attribute hook
+ * strips everything, `style` included), colors validated via CSSOM
+ * round-trip against the palette, nesting depth bounded by a post-walk pass
+ * over DOMPurify's own (already-clean) output fragment, and a sanitize-twice
+ * stability check (mXSS guard for the string→{@html} sink). Fails closed
+ * (never identity-passes dirty markup) when no functional DOM is available.
  */
 import DOMPurify, { type DOMPurify as DOMPurifyInstance, type Config } from 'dompurify';
 import { PALETTE } from './palette.ts';
@@ -16,7 +17,7 @@ import { PALETTE } from './palette.ts';
 const MAX_DEPTH = 20;
 
 const SANITIZE_CONFIG: Config = {
-  ALLOWED_TAGS: ['p', 'br', 'span'],
+  ALLOWED_TAGS: ['p', 'br', 'span', 'strong'],
   ALLOWED_ATTR: ['style'],
   ALLOW_DATA_ATTR: false,
 };
