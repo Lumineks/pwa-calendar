@@ -1,6 +1,8 @@
+import { verifyBearer } from './tokens';
+
 export interface Env {
   JOURNAL: KVNamespace;
-  JOURNAL_TOKEN: string;
+  JOURNAL_TOKENS: string;
   ALLOWED_ORIGIN: string;
 }
 
@@ -17,25 +19,6 @@ const UPDATED_AT_RE = /^\d{4}-\d{2}-\d{2}T/;
 
 function isValidDate(s: string): boolean {
   return DATE_RE.test(s);
-}
-
-/**
- * Constant-time bearer-token comparison.
- * Returns true only when the request carries the correct token.
- */
-async function verifyToken(request: Request, env: Env): Promise<boolean> {
-  const authHeader = request.headers.get("Authorization") ?? "";
-  if (!authHeader.startsWith("Bearer ")) return false;
-  const incoming = authHeader.slice("Bearer ".length);
-
-  const enc = new TextEncoder();
-  const a = enc.encode(incoming);
-  const b = enc.encode(env.JOURNAL_TOKEN);
-
-  // timingSafeEqual requires equal-length buffers; bail early to avoid the throw.
-  if (a.byteLength !== b.byteLength) return false;
-
-  return crypto.subtle.timingSafeEqual(a, b);
 }
 
 /** Build a JSON response with CORS headers always attached. */
@@ -282,10 +265,11 @@ export default {
 
     try {
       // Auth check for all non-OPTIONS requests
-      const authorized = await verifyToken(request, env);
-      if (!authorized) {
+      const account = await verifyBearer(request, env.JOURNAL_TOKENS);
+      if (account === null) {
         return jsonResponse({ error: "Unauthorized" }, 401, allowedOrigin);
       }
+      void account; // threaded into handlers in Task A4
 
       // ── Route dispatch ──────────────────────────────────────────────────────
 
