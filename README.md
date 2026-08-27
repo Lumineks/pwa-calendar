@@ -32,15 +32,18 @@ On first launch, paste the access code (provided by the project owner over a pri
 
 ## Ротация токена / Token rotation
 
-If the access token is compromised or needs to be changed:
+v2 supports multiple accounts sharing one worker. Auth is a single `JOURNAL_TOKENS` secret holding a JSON map of `{ "<token>": "<accountId>" }` — one entry per account. Rotating one account's token means replacing that account's entry in the map; the other entries (other accounts) are untouched.
 
 ```bash
 cd worker
-npx wrangler secret put JOURNAL_TOKEN
-# paste the new UUID when prompted
+npx wrangler secret put JOURNAL_TOKENS
+# paste the FULL JSON map when prompted, e.g.:
+# {"c1c3...uuid": "michael", "9f2a...uuid": "someone-else"}
 ```
 
-Send the new token to the user over Signal or iMessage. On each device: tap **"Выйти"** in the app, then re-paste the new token into the TokenGate screen.
+Send the new token to the affected user over Signal or iMessage. On each of their devices: tap **"Выйти"** in the app, then re-paste the new token into the TokenGate screen.
+
+Client-side effect of a token change: the app derives its local IndexedDB name and localStorage key prefix from a hash of the token (see `src/data/namespace.ts`), so a new token means a new local namespace on that device. The old namespace's data is left in place (untouched, not deleted) but is no longer read. The first run on the new token re-pulls that account's data fresh from the worker — sync, not migration, so a device that goes through rotation needs to be online at least once afterward to get its data back.
 
 ---
 
@@ -54,7 +57,7 @@ npm run build
 npm run worker:deploy
 ```
 
-CI auto-deploys both on every push to `main` via `.github/workflows/deploy.yml`.
+The frontend auto-deploys to GitHub Pages on every push to `main` via `.github/workflows/deploy.yml`. The worker does **not** auto-deploy — it's manual-only by design, so a code deploy never lands ahead of an intentional data migration (see the `deploy-worker` job comment in `.github/workflows/deploy.yml`). Trigger it from the GitHub UI: **Actions → Deploy → Run workflow**, which runs the `deploy-worker` job (or run `npm run worker:deploy` locally with Cloudflare credentials configured).
 
 ---
 
