@@ -2656,7 +2656,7 @@ git commit -m "feat(ui): spiral line without rings, system font calibration, sha
 - Modify: `index.html`, `vite.config.ts`
 - Create: `public/apple-splash-*.png` (generated)
 
-- [ ] **Step 1: Absolute hrefs first (fixes the existing 404.html icon bug)**
+- [x] **Step 1: Absolute hrefs first (fixes the existing 404.html icon bug)**
 
 In `index.html`, change:
 
@@ -2667,7 +2667,7 @@ In `index.html`, change:
 
 (Root-relative WITH the Pages base. Rationale: `dist/404.html` is served for deep routes like `/pwa-calendar/week/…`, where relative hrefs resolve wrongly. Dev note: with Vite `base: '/pwa-calendar/'` the dev server also serves under that prefix, so these work in dev too.)
 
-- [ ] **Step 2: Generate splash screens (requires local Chrome)**
+- [x] **Step 2: Generate splash screens (requires local Chrome)**
 
 ```bash
 npx pwa-asset-generator public/icon-512.png ./public \
@@ -2677,7 +2677,7 @@ npx pwa-asset-generator public/icon-512.png ./public \
 
 Verify the tool inserted `<link rel="apple-touch-startup-image" media="..." href="/pwa-calendar/apple-splash-....png">` tags into `index.html` and PNGs into `public/`.
 
-- [ ] **Step 3: Dark-scheme variants (same light image — a dark-mode device must match SOMETHING or it gets a white splash)**
+- [x] **Step 3: Dark-scheme variants (same light image — a dark-mode device must match SOMETHING or it gets a white splash)**
 
 Run this once to duplicate each splash link with a dark media query pointing at the same file:
 
@@ -2692,7 +2692,7 @@ fs.writeFileSync('index.html', html);
 "
 ```
 
-- [ ] **Step 4: Exclude splash images from the SW precache**
+- [x] **Step 4: Exclude splash images from the SW precache**
 
 Splash images are fetched by the OS at install/launch, never through the service worker — precaching ~15 PNGs would bloat every client. In `vite.config.ts` workbox config add:
 
@@ -2700,7 +2700,7 @@ Splash images are fetched by the OS at install/launch, never through the service
           globIgnores: ['**/apple-splash*'],
 ```
 
-- [ ] **Step 5: CSP meta (defence in depth for the new HTML sink)**
+- [x] **Step 5: CSP meta (defence in depth for the new HTML sink)**
 
 Add to `index.html` `<head>` (before the icon links):
 
@@ -2713,11 +2713,11 @@ Add to `index.html` `<head>` (before the icon links):
 
 (`style-src 'unsafe-inline'` is required by Svelte transitions and the sanitized `style="color: …"` spans; the CSP's job here is blocking script execution and exfiltration origins.)
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 `npm run build` — succeeds; `dist/` contains splash PNGs; `dist/sw.js` precache manifest does NOT list `apple-splash*`; app runs in dev with no CSP violations in the console (check for blocked requests — if the dev worker origin differs, add it to connect-src).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add index.html vite.config.ts public/
