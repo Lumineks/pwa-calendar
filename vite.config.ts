@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+          globIgnores: ['**/apple-splash*'],
           runtimeCaching: workerOrigin
             ? [
                 {
