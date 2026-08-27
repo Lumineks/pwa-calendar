@@ -18,6 +18,7 @@
   import { PALETTE } from '../data/palette.ts';
   import { MAX_BODY_BYTES, utf8ByteLength } from '../data/limits.ts';
   import type RichEditor from '../components/RichEditor.svelte';
+  import { base } from '../lib/base.ts';
 
   /**
    * DayView — fullscreen editor for a single date, rendered on lined paper.
@@ -335,8 +336,6 @@
     activePen = css;
     richEditor?.applyPen(css);
   }
-
-  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   function goBack(): void {
     navigate(`${base}/week/${isoMondayOfDate}`);

@@ -9,6 +9,7 @@
   import OnlineIndicator from '../components/OnlineIndicator.svelte';
   import { setViewAnchor } from '../data/sync.ts';
   import { sanitizeHtml, plainToHtml } from '../data/sanitize.ts';
+  import { base } from '../lib/base.ts';
 
   interface Props {
     isoMonday: string;
@@ -76,8 +77,6 @@
         : (cb) => setTimeout(cb, 1500);
     idle(() => { void import('../components/RichEditor.svelte'); });
   });
-
-  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   function handleMonthChange(newIsoMonday: string): void {
     navigate(`${base}/week/${newIsoMonday}`);

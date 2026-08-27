@@ -8,11 +8,7 @@
   import { syncStart, syncStop, initState } from './data/sync.ts';
   import { initDb } from './data/db.ts';
   import { namespaceFor } from './data/namespace.ts';
-
-  // Strip trailing slash from BASE_URL to get a prefix for navigate() calls and
-  // the Router basepath. In dev (BASE_URL='/') this is '', in production it is
-  // '/pwa-calendar'. Works with any Vite base value without hardcoding.
-  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  import { base } from './lib/base.ts';
 
   // Validate and fix the URL before the Router mounts so it always initializes
   // on a good path. Router reads history.location on creation, so mutations here
