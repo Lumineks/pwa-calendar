@@ -3,12 +3,39 @@
   import { Router, Route, navigate } from 'svelte-routing';
   import { parseISO, isValid, startOfISOWeek, format } from 'date-fns';
   import TokenGate from './routes/TokenGate.svelte';
+  import InstallHint from './components/InstallHint.svelte';
   import WeekView from './routes/WeekView.svelte';
   import DayView from './routes/DayView.svelte';
   import { syncStart, syncStop, initState } from './data/sync.ts';
   import { initDb } from './data/db.ts';
   import { namespaceFor } from './data/namespace.ts';
   import { base } from './lib/base.ts';
+
+  const HINT_LS = 'journal:install-hint-dismissed'; // device property — deliberately NOT namespaced
+
+  function isStandalone(): boolean {
+    return (
+      (navigator as Navigator & { standalone?: boolean }).standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches
+    );
+  }
+  function isIOS(): boolean {
+    return (
+      /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) // iPadOS reports as macOS
+    );
+  }
+
+  let hintDismissed = $state(false);
+  try {
+    hintDismissed = localStorage.getItem(HINT_LS) === '1';
+  } catch { hintDismissed = true; }
+  const showInstallHint = $derived(isIOS() && !isStandalone() && !hintDismissed && $token === null);
+
+  function dismissHint(): void {
+    try { localStorage.setItem(HINT_LS, '1'); } catch { /* ignore */ }
+    hintDismissed = true;
+  }
 
   // Validate and fix the URL before the Router mounts so it always initializes
   // on a good path. Router reads history.location on creation, so mutations here
@@ -60,7 +87,9 @@
   });
 </script>
 
-{#if $token === null}
+{#if showInstallHint}
+  <InstallHint onContinue={dismissHint} />
+{:else if $token === null}
   <TokenGate />
 {:else if $initState === 'initializing' || $initState === 'needs-network'}
   <div class="init-screen">
