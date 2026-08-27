@@ -1737,10 +1737,12 @@ git commit -m "feat(client): tiptap deps (exact-pinned) + palette + dompurify sa
 
 **Files:** none committed (throwaway page allowed under scratchpad).
 
-- [ ] **Step 1:** Build a minimal page with a Tiptap 3 editor (the deps from B1) served over HTTPS (deploy to the existing Pages site under a scratch route, or use `npx vite --host` + a tunnel). On the ACTUAL target iPhone (iOS version recorded): select text in the editor → tap a button OUTSIDE the editor bound to `click` → repeat 10×.
-- [ ] **Step 2:** Record: does the page stop responding to clicks (tiptap#7514)? Does a `pointerup`-bound button keep working when `click` ones die?
-- [ ] **Step 3:** Decision rule (pre-agreed with user): if `pointerup` bindings survive → proceed (all our controls use `pointerup`). If interaction dies entirely → STOP, report to user; fallback is pen-only mode (no selection painting) — user decides.
-- [ ] **Step 4:** Write the outcome (device, iOS version, result) into `docs/superpowers/plans/2026-08-27-v2-implementation.md` as a note under this task, commit.
+- [x] **Step 1:** Build a minimal page with a Tiptap 3 editor (the deps from B1) served over HTTPS (deploy to the existing Pages site under a scratch route, or use `npx vite --host` + a tunnel). On the ACTUAL target iPhone (iOS version recorded): select text in the editor → tap a button OUTSIDE the editor bound to `click` → repeat 10×.
+- [x] **Step 2:** Record: does the page stop responding to clicks (tiptap#7514)? Does a `pointerup`-bound button keep working when `click` ones die?
+- [x] **Step 3:** Decision rule (pre-agreed with user): if `pointerup` bindings survive → proceed (all our controls use `pointerup`). If interaction dies entirely → STOP, report to user; fallback is pen-only mode (no selection painting) — user decides.
+- [x] **Step 4:** Write the outcome (device, iOS version, result) into `docs/superpowers/plans/2026-08-27-v2-implementation.md` as a note under this task, commit.
+
+> **SPIKE OUTCOME (2026-08-27):** iPhone 14 Pro Max, iOS 26.6. Tiptap 3.30.5 spike page (select text → tap external button, 10 repetitions): `click`-bound button kept working all 10 times; `pointerup`-bound button and pointerup color dot also worked throughout. tiptap#7514 did NOT reproduce on the target device. Decision per pre-agreed rule: PROCEED. Keep all controls on `pointerup` anyway (defence in depth per the plan's Global Constraints).
 
 ---
 
