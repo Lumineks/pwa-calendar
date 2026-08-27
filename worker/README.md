@@ -70,6 +70,12 @@ If the token is ever leaked or compromised:
 
 ---
 
+## Dev setup
+
+1. Copy `.dev.vars.example` to `.dev.vars` (gitignored).
+2. The dev KV namespace is separate from production — `wrangler.toml`'s `[env.dev]` block binds `JOURNAL` to its own namespace id, so local dev and migration rehearsal never touch production data.
+3. The production secret is `JOURNAL_TOKENS` (a JSON map of `token -> accountId`), set via `npx wrangler secret put JOURNAL_TOKENS`. The legacy single-token `JOURNAL_TOKEN` secret is retained during the rollback window.
+
 ## Local development
 
 ```bash
@@ -77,7 +83,7 @@ nvm use 22        # wrangler 4.x requires Node >= 22
 npm run dev       # starts wrangler dev on http://localhost:8787
 ```
 
-The dev environment uses the same KV namespace as production (single-user app; acceptable for v1). To inspect KV during dev:
+The dev environment uses its own KV namespace, separate from production. To inspect KV during dev:
 
 ```bash
 npx wrangler kv key list --binding=JOURNAL

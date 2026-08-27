@@ -1,0 +1,2 @@
+# Copy to worker/.dev.vars (gitignored). Map: token -> accountId.
+JOURNAL_TOKENS = {"dev-token-marina":"marina-actress","dev-token-test":"test"}

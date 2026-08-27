@@ -13,10 +13,6 @@ ALLOWED_ORIGIN = "https://lumineks.github.io"
 [env.dev.vars]
 ALLOWED_ORIGIN = "http://localhost:5173"
 
-# Dev uses the same KV namespace as production (single-user app; acceptable for v1).
-# If you want a separate preview namespace, create one with:
-#   npx wrangler kv namespace create JOURNAL --preview
-# and add a second [[env.dev.kv_namespaces]] block with preview_id.
 [[env.dev.kv_namespaces]]
 binding = "JOURNAL"
-id = "e329d26f945e46c094a7bf982d8a5895"
+id = "6e25ab0cda1344f793f2c7872e54a19b"
