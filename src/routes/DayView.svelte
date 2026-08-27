@@ -11,8 +11,12 @@
     getISODay,
   } from 'date-fns';
   import { ru } from 'date-fns/locale';
-  import { getEntry, putEntry } from '../data/db.ts';
+  import { getEntry, putEntry, type Entry } from '../data/db.ts';
   import { debounce } from '../data/util.ts';
+  import { toEditorHtml, isEmptyHtml } from '../data/sanitize.ts';
+  import { PALETTE } from '../data/palette.ts';
+  import { MAX_BODY_BYTES, utf8ByteLength } from '../data/limits.ts';
+  import type RichEditor from '../components/RichEditor.svelte';
 
   /**
    * DayView — fullscreen editor for a single date, rendered on lined paper.
@@ -22,17 +26,30 @@
    *   2. We validate the format and isValid() once per `date` change. If
    *      invalid, we redirect (replace:true) to the current ISO week and the
    *      main render short-circuits via {#if validInput}.
-   *   3. On a valid `date`, we load the body from Dexie via the repo.
-   *   4. Every input schedules a 300ms-debounced putEntry(date, body). The
-   *      debounce closure reads `date` and `body` at flush time, which avoids
-   *      util.ts/flush(...args)'s signature (which takes NEW args, not pending
-   *      ones — see src/data/util.ts).
+   *   3. On a valid `date`, we load the entry from Dexie and convert it to
+   *      editor HTML via toEditorHtml() — sanitized for `format: 'html'`
+   *      rows, escaped-and-wrapped for LEGACY plain-text rows. Loading never
+   *      writes, so opening a legacy entry does NOT silently upgrade it.
+   *   4. Every editor update schedules a 300ms-debounced
+   *      putEntry(date, bodyHtml, 'html'). The debounce closure reads `date`
+   *      and `bodyHtml` at flush time, which avoids util.ts/flush(...args)'s
+   *      signature (which takes NEW args, not pending ones — see
+   *      src/data/util.ts).
    *   5. On unmount we flush ONLY IF there's a pending edit. util.ts/flush
    *      fires fn unconditionally, so a naive flush would spam Dexie with a
    *      no-op write every time a day is opened-then-closed without editing
    *      (and Phase 6 would propagate that to KV). The pendingSave guard
    *      preserves PLAN.md's stated goal "so an in-flight debounce isn't lost"
    *      while skipping spurious writes.
+   *
+   * v2 note — why `bodyHtml` is the authoritative mirror and not the editor:
+   *   RichEditor is lazily imported and keyed by `date`, so the tiptap
+   *   instance is destroyed and rebuilt on every navigation. Anything we
+   *   needed to read OUT of the editor at teardown time would already be
+   *   gone. Instead the editor pushes each transaction up through
+   *   `handleEditorUpdate`, which mirrors it into `bodyHtml` synchronously —
+   *   so the last keystroke is always in `bodyHtml` before any teardown, and
+   *   both flush paths (effect cleanup, onDestroy) persist from the mirror.
    */
 
   interface Props {
@@ -74,9 +91,17 @@
 
   // ---- Editor state ----
 
-  let body = $state('');
+  /** Authoritative HTML mirror — survives editor teardown (see header note). */
+  let bodyHtml = $state('');
+  /** null until the entry loads; non-null mounts/keys the lazy editor. */
+  let initialHtml = $state<string | null>(null);
+  let richEditor = $state<RichEditor | null>(null);
+  let activePen = $state<string>(PALETTE[0].css);
+
   type SaveState = 'saved' | 'saving' | 'error';
   let saveState = $state<SaveState>('saved');
+  /** '' or 'Слишком длинная запись' — takes over the indicator when set. */
+  let saveError = $state('');
   let pendingSave = $state(false);
 
   const SAVE_LABEL: Record<SaveState, string> = {
@@ -85,15 +110,21 @@
     error: 'Ошибка сохранения',
   };
 
+  const saveLabel = $derived(saveError !== '' ? saveError : SAVE_LABEL[saveState]);
+
   /**
    * Debounced save. Constructed ONCE per component instance. The arrow
-   * closes over the reactive `date` and `body` runes, so each flush reads
+   * closes over the reactive `date` and `bodyHtml` runes, so each flush reads
    * the LATEST values — sidestepping util.ts/flush's (...newArgs) signature.
+   *
+   * The empty body deliberately gets NO format marker: an empty entry has no
+   * markup to interpret, and stamping it 'html' would needlessly diverge from
+   * what the worker/legacy rows look like.
    */
   const save = debounce(() => {
     pendingSave = false;
     saveState = 'saving';
-    putEntry(date, body)
+    putEntry(date, bodyHtml, bodyHtml === '' ? undefined : 'html')
       .then(() => {
         saveState = 'saved';
       })
@@ -125,34 +156,66 @@
     if (!validInput) return;
     const target = date;
     let cancelled = false;
-    void getEntry(target).then((entry) => {
+    // Unmount the editor for the duration of the load so the keyed {#await}
+    // block can never show the PREVIOUS date's document under the new header.
+    initialHtml = null;
+    void getEntry(target).then((entry: Entry | undefined) => {
       if (cancelled) return;
-      body = entry?.body ?? '';
+      const html = toEditorHtml(entry);
+      bodyHtml = html;
+      initialHtml = html; // mounts/keys the editor
       saveState = 'saved';
+      saveError = '';
       pendingSave = false;
     });
     return () => {
       cancelled = true;
       if (pendingSave) {
-        // Capture the OLD date+body before the cleanup returns — by the time
+        // Capture the OLD date+html before the cleanup returns — by the time
         // this closure runs, `date` may already point at the NEW route, but
-        // `body` still holds what the user typed into the OLD date (we have
-        // not yet awaited the new getEntry load above for the new target).
+        // `bodyHtml` still holds what the user typed into the OLD date (we
+        // have not yet awaited the new getEntry load above for the new
+        // target).
         const prevDate = target;
-        const prevBody = body;
+        const prevHtml = bodyHtml;
         save.cancel();
         pendingSave = false;
         // Fire-and-forget. markDirty (inside putEntry) queues for sync.
-        void putEntry(prevDate, prevBody);
+        void putEntry(prevDate, prevHtml, prevHtml === '' ? undefined : 'html');
       }
     };
   });
 
-  function onInput(): void {
+  /**
+   * Called by RichEditor on every ProseMirror transaction.
+   *
+   * Byte-limit rule: an oversize document must NEVER enter the dirty set —
+   * neither via the debounce nor via either flush path. So we bail BEFORE
+   * touching `bodyHtml`/`pendingSave`; the mirror keeps the last
+   * within-limit document, and any already-armed debounce for it still
+   * commits that (correct) content. Deleting back under the limit produces a
+   * fresh update and clears the error.
+   */
+  function handleEditorUpdate(html: string): void {
     if (!validInput) return;
+    const normalized = isEmptyHtml(html) ? '' : html;
+    if (utf8ByteLength(normalized) > MAX_BODY_BYTES) {
+      saveState = 'error';
+      saveError = 'Слишком длинная запись';
+      return; // do not queue — an oversize entry must never enter the dirty set
+    }
+    saveError = '';
+    bodyHtml = normalized;
     pendingSave = true;
     saveState = 'saving';
     save();
+  }
+
+  /** Pen picking is bound to `pointerup` in the template (never `click`) —
+   * see the tiptap#7514 constraint in the plan. */
+  function pickPen(css: string): void {
+    activePen = css;
+    richEditor?.applyPen(css);
   }
 
   const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -182,18 +245,35 @@
         aria-live="polite"
         role="status"
       >
-        {SAVE_LABEL[saveState]}
+        {saveLabel}
       </span>
     </header>
 
-    <textarea
-      class="paper editor"
-      lang="ru"
-      bind:value={body}
-      oninput={onInput}
-      aria-label="Запись на день"
-      placeholder=""
-    ></textarea>
+    <div class="palette" role="toolbar" aria-label="Цвет текста">
+      {#each PALETTE as pen (pen.id)}
+        <button
+          type="button"
+          class={['pen', activePen === pen.css && 'is-active']}
+          style={`--pen: ${pen.css}`}
+          aria-label={pen.label}
+          onpointerup={() => pickPen(pen.css)}
+        ></button>
+      {/each}
+    </div>
+
+    <div class="paper editor-pane">
+      {#if initialHtml !== null}
+        {#key date}
+          {#await import('../components/RichEditor.svelte') then mod}
+            <mod.default
+              bind:this={richEditor}
+              initialHtml={initialHtml}
+              onUpdate={handleEditorUpdate}
+            />
+          {/await}
+        {/key}
+      {/if}
+    </div>
   </div>
 {/if}
 
@@ -289,52 +369,72 @@
     color: #b73535;
   }
 
-  /* Textarea — the heart of Phase 4.
+  /* Pen palette — the six colours from src/data/palette.ts.
    *
-   *   line-height: var(--paper-line-height)
-   *       Each typed line occupies exactly one paper-line slice. Phase 4.6
-   *       tightened this to 20px (from 27px) for a denser ruled rhythm.
+   * Every dot binds `pointerup`, NOT `click`: on the target device a
+   * `click`-driven selection change races tiptap's own pointer handling
+   * (tiptap#7514). The B2 spike could not reproduce the bug on 3.30.5, but
+   * the plan keeps the constraint because pointerup is also what makes
+   * "select a word → tap a pen" work without the selection collapsing first. */
+  .palette {
+    display: flex;
+    gap: 10px;
+    padding: 6px 14px;
+    background: rgba(251, 246, 233, 0.92);
+    border-bottom: 1px solid rgba(70, 60, 35, 0.12);
+  }
+
+  .pen {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(70, 60, 35, 0.18);
+    background: var(--pen);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .pen.is-active {
+    border-color: #2c2412;
+    box-shadow: 0 0 0 2px rgba(44, 36, 18, 0.25);
+  }
+
+  .pen:focus-visible {
+    outline: 2px solid #c43c3c;
+    outline-offset: 2px;
+  }
+
+  /* Editor pane — the lined paper the tiptap surface sits on.
    *
    *   font-size: 16px  ← MUST NOT be lowered.
    *       The iOS Safari auto-zoom floor. Anything below 16px triggers a
-   *       pinch-zoom on focus in mobile Safari. Locked by Phase 4.
+   *       pinch-zoom on focus in mobile Safari. RichEditor's own
+   *       .rich-editor-content restates 16px so neither layer can drift.
    *
-   *   padding-top: 3px  (Phase 4.6 recalibration)
-   *       The paper rule is at y=19px in each 20px tile. For Georgia 16px
-   *       in a 20px line-box: half-leading ≈ 2px, ascender ≈ 14px →
-   *       baseline from line-box top ≈ 16px. padding-top = 19 − 16 = 3px.
-   *       Verified visually: 6+ typed Russian lines sit on their rules.
-   */
-  .editor {
+   *   line-height: var(--paper-line-height)
+   *       Each typed line occupies exactly one paper-line slice; RichEditor
+   *       restates it on the content root and on <p> (whose margins are
+   *       zeroed) so paragraphs land on the rules.
+   *
+   *   --editor-pad-top
+   *       Baseline calibration for the system font, consumed by
+   *       .rich-editor-content's padding-top. Task B7 re-measures it; 2px is
+   *       the starting value.
+   *
+   * IMPORTANT: do not set the `background` shorthand here. The global
+   * `.paper` class in src/styles/paper.css supplies both the paper-fill
+   * background-color AND the repeating-linear-gradient that draws the
+   * horizontal rules. Setting `background: transparent` (or any other
+   * shorthand value) wipes out background-image and the lines disappear. */
+  .editor-pane {
     flex: 1 1 auto;
+    display: flex;
+    overflow: hidden;
     width: 100%;
     box-sizing: border-box;
-    margin: 0;
-    padding: 0 18px 0 18px;
-    border: 0;
-    outline: 0;
-    color: #2c2412;
-    font-family: 'Georgia', 'Times New Roman', ui-serif, serif;
+    --editor-pad-top: 2px;
     font-size: 16px;
     line-height: var(--paper-line-height);
-    resize: none;
-    /* IMPORTANT: do not set the `background` shorthand here. The global
-     * `.paper` class in src/styles/paper.css supplies both the paper-fill
-     * background-color AND the repeating-linear-gradient that draws the
-     * horizontal rules. Setting `background: transparent` (or any other
-     * shorthand value) on .editor wipes out background-image and the lines
-     * disappear. */
-  }
-
-  .editor:focus-visible {
-    /* Inset focus ring — keeps the lined background visible underneath
-     * while still announcing keyboard focus. */
-    outline: 2px solid rgba(196, 60, 60, 0.6);
-    outline-offset: -2px;
-  }
-
-  /* Empty-state placeholder color (browsers vary; keep it subtle). */
-  .editor::placeholder {
-    color: rgba(70, 60, 35, 0.3);
+    color: #2c2412;
   }
 </style>
