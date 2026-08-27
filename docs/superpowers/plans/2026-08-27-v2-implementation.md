@@ -1757,7 +1757,7 @@ git commit -m "feat(client): tiptap deps (exact-pinned) + palette + dompurify sa
 - Produces: `RichEditor.svelte` with props `{ initialHtml: string; onUpdate: (html: string) => void }` and exported methods (via `bind:this`): `setContentSilently(html: string): void`, `applyPen(css: string): void`, `isComposing(): boolean`, `isFocused(): boolean`, `blurEditor(): void`, `onNextCompositionEnd(cb: () => void): void`.
 - DayView save contract preserved: 300ms debounce, `pendingSave` flag, flush-on-date-change and on `onDestroy`, save indicator strings unchanged + new oversize error «Слишком длинная запись».
 
-- [ ] **Step 1: Create `src/components/RichEditor.svelte`**
+- [x] **Step 1: Create `src/components/RichEditor.svelte`**
 
 ```svelte
 <script lang="ts">
@@ -1850,7 +1850,7 @@ git commit -m "feat(client): tiptap deps (exact-pinned) + palette + dompurify sa
 </style>
 ```
 
-- [ ] **Step 2: Rework `src/routes/DayView.svelte`**
+- [x] **Step 2: Rework `src/routes/DayView.svelte`**
 
 Key changes (the file keeps validation/derivations/header; the textarea block is replaced):
 
@@ -1989,11 +1989,11 @@ Palette styles:
 
 IMPORTANT details to preserve: `.editor-pane` computed font-size stays 16px (zoom floor); the `--editor-pad-top` custom property is calibrated in Task B7 for the system font (start with `2px`); `onpointerup` everywhere, no `onclick`, per tiptap#7514.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 `npm run check` → 0. Dev smoke (test account): open a day → type multi-line Russian → indicator cycles «Сохраняется… → Сохранено»; pick red pen → type → red text; select a word → tap blue → word turns blue; reload → colors persist; open a LEGACY plain-text entry (seed one via curl without format) → renders as text, escaped, and does NOT get re-saved just by opening (check: no PUT fires in the network tab until you type).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/components/RichEditor.svelte src/routes/DayView.svelte
