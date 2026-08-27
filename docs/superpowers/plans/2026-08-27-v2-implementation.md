@@ -672,7 +672,7 @@ Do NOT deploy. The worker goes live only via the Task A9 runbook.
   - `reverse` — rollback aid: copy `a:marina-actress:*` entries newer than legacy back into legacy keys (report-only without `--apply`)
 - All KV access shells out to `npx wrangler kv key ...` (already authenticated). `--env dev` targets the dev namespace for rehearsal; default is production (`--remote`).
 
-- [ ] **Step 1: Write the script**
+- [x] **Step 1: Write the script**
 
 Create `worker/scripts/migrate-accounts.mjs`:
 
@@ -817,7 +817,7 @@ if (mode === 'backup') {
 }
 ```
 
-- [ ] **Step 2: Rehearse on the dev namespace**
+- [x] **Step 2: Rehearse on the dev namespace**
 
 Seed dev KV with fake legacy data and run the full cycle:
 
@@ -835,7 +835,7 @@ node scripts/migrate-accounts.mjs diff --env dev          # expect 0 pending
 
 Expected: verify prints `Verified 2/2` and exits 0.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add worker/scripts/migrate-accounts.mjs
