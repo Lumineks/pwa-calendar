@@ -68,16 +68,17 @@ if (mode === 'backup') {
   const dump = {};
   for (const k of keys) dump[k] = getValue(k);
 
-  // Completeness cross-check: list() could silently truncate. Every date
-  // referenced by either index must have its entry key present in the dump.
-  const parseIndexFromDump = (key) => {
-    const raw = dump[key];
-    if (raw === undefined) return [];
-    try { return JSON.parse(raw); } catch { return []; }
-  };
-  const legacyDates = parseIndexFromDump('index');
-  const accountDates = parseIndexFromDump(`a:${ACCOUNT}:index`);
+  // Completeness cross-check: list() could silently truncate. Expected dates
+  // come from INDEPENDENT LIVE reads (legacyIndex()/accountIndex(), each a
+  // fresh `kv key get`), not from the dump under test — otherwise a dump
+  // that's missing the index key itself (lexicographically the most
+  // truncation-exposed key: `a:*` and `entries:*` sort before `index`)
+  // would make the check pass trivially on an empty expected-dates list.
+  const legacyDates = legacyIndex();
+  const accountDates = accountIndex();
   const missing = [];
+  if (legacyDates.length && !('index' in dump)) missing.push('index');
+  if (accountDates.length && !(`a:${ACCOUNT}:index` in dump)) missing.push(`a:${ACCOUNT}:index`);
   for (const d of legacyDates) {
     if (!(`entries:${d}` in dump)) missing.push(`entries:${d}`);
   }
@@ -85,7 +86,7 @@ if (mode === 'backup') {
     if (!(`a:${ACCOUNT}:entries:${d}` in dump)) missing.push(`a:${ACCOUNT}:entries:${d}`);
   }
   if (missing.length) {
-    console.error(`BACKUP INCOMPLETE: ${missing.length} key(s) referenced by an index are missing from the dump (list() likely truncated):`, missing);
+    console.error(`BACKUP INCOMPLETE: ${missing.length} key(s) referenced by an index (read live, independent of the dump) are missing from the dump (list() likely truncated):`, missing);
     process.exit(1);
   }
 
