@@ -1289,7 +1289,7 @@ git commit -m "feat(client): per-namespace dexie + namespaced sync lifecycle, pu
 - Consumes: `initState` store, `applyServerEntry`, `countEntries` (A7), `api.health/listIndex/listEntries`.
 - Produces: real `ensureInitialized()`; localStorage flags `journal:<ns>:initialized` = `'1'`, `journal:<ns>:account` = accountId. App renders a blocking overlay while `initializing`/`needs-network` — copy given below.
 
-- [ ] **Step 1: Implement `ensureInitialized` in `sync.ts`** (replacing the A7 stub)
+- [x] **Step 1: Implement `ensureInitialized` in `sync.ts`** (replacing the A7 stub)
 
 ```ts
 import Dexie from 'dexie';
@@ -1408,7 +1408,7 @@ async function ensureInitialized(): Promise<void> {
 
 Also: in the `'online'` listener inside `syncStart`, prepend `void ensureInitialized();` so recovery is automatic, and add the same call at the start of the periodic pull tick when `get(initState) !== 'ready'` — simplest: keep a module flag and re-call `ensureInitialized()` from the interval when not ready (it early-returns once the flag is set). Import `get` from `svelte/store` if needed.
 
-- [ ] **Step 2: App overlay**
+- [x] **Step 2: App overlay**
 
 In `src/App.svelte`, inside the `{:else}` branch (token present), wrap the Router:
 
@@ -1451,11 +1451,11 @@ With scoped styles:
 .init-hint { font-size: 14px; color: #5a4a26; max-width: 320px; }
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 `npm run check` → 0 errors. Dev smoke: clear site data, log in with `dev-token-test` while the dev worker is STOPPED → expect the «Нужно подключение к интернету» screen; start the worker, toggle DevTools offline off / fire `window.dispatchEvent(new Event('online'))` → app proceeds to WeekView.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/
