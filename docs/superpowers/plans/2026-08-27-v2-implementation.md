@@ -149,7 +149,7 @@ Note: pushing this commit to `main` triggers a Pages deploy of the unchanged fro
 **Interfaces:**
 - Produces: `[env.dev]` bound to a NON-production KV namespace; local dev + migration rehearsal never touch production data.
 
-- [ ] **Step 1: Create the dev KV namespace**
+- [x] **Step 1: Create the dev KV namespace** (id: `6e25ab0cda1344f793f2c7872e54a19b`)
 
 Run (from `worker/`):
 
@@ -159,7 +159,7 @@ npx wrangler kv namespace create JOURNAL_DEV
 
 Expected output contains a new namespace id (32-hex). Record it as `<DEV_KV_ID>`.
 
-- [ ] **Step 2: Point env.dev at it**
+- [x] **Step 2: Point env.dev at it**
 
 In `worker/wrangler.toml`, replace the `[env.dev]` KV block (which currently reuses the production id `e329d26f945e46c094a7bf982d8a5895`) with:
 
@@ -175,7 +175,7 @@ id = "<DEV_KV_ID>"
 
 Delete the old comment block about sharing the production namespace.
 
-- [ ] **Step 3: Dev token map**
+- [x] **Step 3: Dev token map**
 
 Create `worker/.dev.vars.example` (committed template):
 
@@ -186,15 +186,15 @@ JOURNAL_TOKENS = {"dev-token-marina":"marina-actress","dev-token-test":"test"}
 
 Create `worker/.dev.vars` with the same content (real local values are fine to equal the example in dev).
 
-- [ ] **Step 4: Verify dev worker boots**
+- [x] **Step 4: Verify dev worker boots**
 
 Run: `npm --prefix worker run dev` — expect wrangler to start without binding errors; Ctrl-C. (Auth will 401 until Task A3/A4 land — that's fine; we only verify bindings resolve.)
 
-- [ ] **Step 5: Document in worker/README.md**
+- [x] **Step 5: Document in worker/README.md**
 
 Add a short section "Dev setup": copy `.dev.vars.example` → `.dev.vars`; dev KV namespace is separate from production; production secret is `JOURNAL_TOKENS` (JSON map), legacy `JOURNAL_TOKEN` retained during the rollback window.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add worker/wrangler.toml worker/.dev.vars.example worker/README.md
