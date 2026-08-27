@@ -12,6 +12,7 @@
   } from 'date-fns';
   import { ru } from 'date-fns/locale';
   import { getEntry, putEntry, type Entry } from '../data/db.ts';
+  import { onEntryUpdated } from '../data/sync.ts';
   import { debounce } from '../data/util.ts';
   import { toEditorHtml, isEmptyHtml } from '../data/sanitize.ts';
   import { PALETTE } from '../data/palette.ts';
@@ -192,6 +193,66 @@
         void putEntry(prevDate, prevHtml, prevHtml === '' ? undefined : 'html');
       }
     };
+  });
+
+  /**
+   * B4 — live refresh of the open DayView when a server-originated write
+   * lands for THIS date (pull() reconciliation or the 409-push LWW takeover
+   * in sync.ts's applyServerEntry). Dexie writes are invisible to Svelte
+   * state on their own, so without this the editor would keep showing a
+   * stale local copy until the next navigation.
+   *
+   * Ordering matters and must NOT be reshuffled:
+   *   1. Composing — never touch the DOM mid-composition (iOS Russian
+   *      predictive input can be mid-IME-composition when the update
+   *      arrives). Defer via onNextCompositionEnd instead of swapping now.
+   *   2. Focused — the user is actively typing; their copy wins locally and
+   *      LWW resolves the divergence on the next push. Do NOT swap.
+   *   3. Otherwise safe to swap: cancel any queued save and clear
+   *      pendingSave BEFORE writing the new content, so a navigation
+   *      immediately after can't resurrect the now-stale mirror (via the
+   *      load effect's cleanup flush) over the fresh server value.
+   *      setContentSilently uses `{ emitUpdate: false }`, so this produces
+   *      no onUpdate → no PUT echo back to the server.
+   */
+  async function refreshFromServerCopy(): Promise<void> {
+    const ed = richEditor;
+    if (!ed) return;
+    if (ed.isComposing()) {
+      // Never touch the DOM mid-composition (iOS Russian predictive input).
+      ed.onNextCompositionEnd(() => void refreshFromServerCopy());
+      return;
+    }
+    if (ed.isFocused()) return; // user is typing — their copy wins; next push resolves via LWW
+    const entry = await getEntry(date);
+    const html = toEditorHtml(entry);
+    // Clear any queued save of the now-stale mirror BEFORE swapping, so a
+    // navigation right after this can't resurrect the old value with a new
+    // updatedAt.
+    save.cancel();
+    pendingSave = false;
+    bodyHtml = html;
+    ed.setContentSilently(html);
+    saveState = 'saved';
+  }
+
+  /**
+   * Subscribes to onEntryUpdated for as long as `date` is valid, re-firing
+   * (and re-subscribing) whenever `date` changes. `target` is captured at
+   * effect-setup time so a notification for a DIFFERENT date that arrives
+   * after navigation — the callback is still the old closure until Svelte
+   * reruns this effect — is compared against the date this subscription was
+   * set up for, not whatever `date` happens to be when the callback fires.
+   * The returned `off` unsubscribes on date change and on unmount alike,
+   * since Svelte effect cleanups run for both.
+   */
+  $effect(() => {
+    if (!validInput) return;
+    const target = date;
+    const off = onEntryUpdated((d) => {
+      if (d === target) void refreshFromServerCopy();
+    });
+    return off;
   });
 
   /**
