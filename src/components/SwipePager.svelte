@@ -7,8 +7,12 @@
     next?: Snippet;
     onNavigate: (dir: -1 | 1) => void;
     onBeforeSettle?: () => Promise<void>;
+    /** Opt-out hook: return true to let this touch bypass the pager entirely
+     * (e.g. an iOS selection-handle drag starting inside an editor) — used
+     * by DayView to keep selection-handle drags native. */
+    shouldIgnore?: (e: TouchEvent) => boolean;
   }
-  let { prev, current, next, onNavigate, onBeforeSettle }: Props = $props();
+  let { prev, current, next, onNavigate, onBeforeSettle, shouldIgnore }: Props = $props();
 
   const EDGE_GUARD_PX = 28;
   const LOCK_DX = 8;
@@ -49,6 +53,11 @@
 
   async function onTouchStart(e: TouchEvent): Promise<void> {
     if (animating || e.touches.length !== 1) return;
+    // Opt-out BEFORE any tracking/preventDefault: if the touch belongs to a
+    // native gesture the caller wants to keep (e.g. an iOS selection-handle
+    // drag), the pager must never arm — not even provisionally — so native
+    // handling proceeds untouched.
+    if (shouldIgnore?.(e)) return;
     const t = e.touches[0]!;
     // Suppress the OS edge-swipe (back/forward) for touches starting at the
     // screen edges. Requires {passive:false} — Safari defaults touchstart to

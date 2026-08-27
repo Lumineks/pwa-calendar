@@ -480,7 +480,26 @@
   <!-- The pager owns the navigation animation now (v1's transition:fly is
        gone): the neighbour panels are real, finger-following paper, and
        committing the gesture navigates. -->
-  <SwipePager onNavigate={swipeDay} onBeforeSettle={settleKeyboard}>
+  <SwipePager
+    onNavigate={swipeDay}
+    onBeforeSettle={settleKeyboard}
+    shouldIgnore={(e) => {
+      // C2 device-confirmed (parked B7 finding): a drag on an iOS selection
+      // handle inside the editor was being hijacked as a horizontal swipe.
+      // BOTH conditions are required together — touch starts inside the
+      // editor host AND a non-empty selection already exists. A collapsed
+      // caret must NOT opt out: with the keyboard open, swiping still needs
+      // to blur-then-slide (settleKeyboard's flow above) to navigate days,
+      // and that only works if the pager keeps tracking normal taps/drags
+      // on a caret-only editor.
+      const t = e.target;
+      return (
+        t instanceof Element &&
+        t.closest('.rich-editor-host') !== null &&
+        (richEditor?.hasSelection() ?? false)
+      );
+    }}
+  >
     {#snippet prev()}
       <div class="day-view day-static" aria-hidden="true">
         <div class="paper static-paper">{@html neighborHtml[prevDateStr] ?? ''}</div>
@@ -750,7 +769,7 @@
    *       restates it on the content root and on <p> (whose margins are
    *       zeroed) so paragraphs land on the rules.
    *
-   *   --editor-pad-top: 2px  (Task B8 calibration — mirrors v1's
+   *   --editor-pad-top: 0px  (Task B8 calibration — mirrors v1's
    *       Phase-4.6 calc, corrected)
    *       The paper rule sits at y=17px of each 18px tile (paper.css's
    *       --paper-line-height is 18px — v1's version of this comment
@@ -758,13 +777,13 @@
    *       time it was written; this comment uses the real value). For
    *       -apple-system 16px in an 18px line-box: half-leading ≈ 1px,
    *       ascender ≈ 15px → baseline from line-box top ≈ 16px, so
-   *       padding-top = 17 − 16 = 1px by the same arithmetic v1 used —
-   *       within a pixel of the pre-existing 2px value kept below.
-   *       UNVERIFIED: this pass has no browser to render the page in, so
-   *       the value was left unchanged rather than "corrected" on paper
-   *       math alone. Controller: type 6+ lines of Russian and confirm
-   *       each line's baseline sits ON its rule in desktop Safari/Chrome
-   *       and (Phase C) on-device iPhone; nudge ±1px if it doesn't.
+   *       padding-top = 17 − 16 = 1px by the same arithmetic v1 used.
+   *       C2 device pass (iPhone 14 Pro Max, iOS 26.6): the prior 2px
+   *       value overlapped typed text onto the rule («наезжает на
+   *       линию строчки»); raised to 0px per user report, verified
+   *       on-device. Controller: type 6+ lines of Russian and confirm
+   *       each line's baseline sits ON its rule; nudge ±1px if it
+   *       doesn't — the user re-verifies over LAN HMR.
    *
    * IMPORTANT: do not set the `background` shorthand here. The global
    * `.paper` class in src/styles/paper.css supplies both the paper-fill
@@ -777,7 +796,7 @@
     overflow: hidden;
     width: 100%;
     box-sizing: border-box;
-    --editor-pad-top: 2px;
+    --editor-pad-top: 0px;
     font-size: 16px;
     line-height: var(--paper-line-height);
     color: #2c2412;

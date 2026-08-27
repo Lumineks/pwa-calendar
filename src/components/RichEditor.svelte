@@ -82,6 +82,15 @@
   export function isFocused(): boolean {
     return editor?.isFocused ?? false;
   }
+  /**
+   * True when the current selection is a non-empty range (not a collapsed
+   * caret). Used by DayView's `shouldIgnore` hook into SwipePager so that
+   * dragging an iOS selection handle inside the editor is never hijacked as
+   * a horizontal swipe (C2 device-confirmed, parked B7 finding).
+   */
+  export function hasSelection(): boolean {
+    return editor ? !editor.state.selection.empty : false;
+  }
   export function blurEditor(): void {
     editor?.commands.blur();
   }
