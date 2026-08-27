@@ -5,7 +5,7 @@
   import TokenGate from './routes/TokenGate.svelte';
   import WeekView from './routes/WeekView.svelte';
   import DayView from './routes/DayView.svelte';
-  import { syncStart, syncStop } from './data/sync.ts';
+  import { syncStart, syncStop, initState } from './data/sync.ts';
   import { initDb } from './data/db.ts';
   import { namespaceFor } from './data/namespace.ts';
 
@@ -66,6 +66,17 @@
 
 {#if $token === null}
   <TokenGate />
+{:else if $initState === 'initializing' || $initState === 'needs-network'}
+  <div class="init-screen">
+    <p class="init-title">
+      {$initState === 'initializing' ? 'Загрузка данных…' : 'Нужно подключение к интернету'}
+    </p>
+    <p class="init-hint">
+      {$initState === 'initializing'
+        ? 'Первый запуск: журнал загружается с сервера.'
+        : 'Для первой загрузки журнала подключитесь к сети — записи появятся автоматически.'}
+    </p>
+  </div>
 {:else}
   <Router basepath={base}>
     <Route path="/week/:isoMonday" let:params>
@@ -76,3 +87,21 @@
     </Route>
   </Router>
 {/if}
+
+<style>
+  .init-screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #fbf6e9;
+    color: #2c2412;
+    font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+    padding: 24px;
+    text-align: center;
+  }
+  .init-title { font-size: 17px; font-weight: 700; }
+  .init-hint { font-size: 14px; color: #5a4a26; max-width: 320px; }
+</style>

@@ -31,16 +31,18 @@
  * format ever changes. If you add fields, also bump a version key alongside.
  */
 
+import Dexie from 'dexie';
 import {
   addWeeks,
   format,
   parseISO,
   startOfISOWeek,
 } from 'date-fns';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import * as api from './api.ts';
-import { isApiError, isNetworkError } from './api.ts';
+import { isApiError, isNetworkError, NetworkError } from './api.ts';
 import {
+  countEntries,
   getEntry as dbGetEntry,
   dbWriteFromServer,
 } from './db.ts';
@@ -54,6 +56,7 @@ const DEBOUNCE_MS = 3_000;
 const PULL_INTERVAL_MS = 3 * 60_000;
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 5 * 60_000;
+const PULL_CHUNK = 40; // worker does 1 KV subrequest per date; free-plan cap is 50/invocation
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -385,10 +388,119 @@ function currentPullRange(): { from: string; to: string } {
   return { from, to };
 }
 
-// ── First-run initialization (Task A8 replaces this stub) ───────────────
+// ── First-run initialization ─────────────────────────────────────────────
+
+/**
+ * Pull the FULL server index in chunks (bounded by the worker's free-plan KV
+ * subrequest cap) and reconcile each chunk into Dexie via LWW, same rule as
+ * pull(): take the server's copy iff it's strictly newer.
+ */
+async function fullPullFromIndex(index: string[]): Promise<void> {
+  for (let i = 0; i < index.length; i += PULL_CHUNK) {
+    const chunk = index.slice(i, i + PULL_CHUNK);
+    const first = chunk[0];
+    const last = chunk[chunk.length - 1];
+    if (first === undefined || last === undefined) continue;
+    const { entries } = await api.listEntries(first, last);
+    for (const [date, server] of Object.entries(entries)) {
+      if (!DATE_RE.test(date)) continue;
+      const local = await dbGetEntry(date);
+      if (!local || server.updatedAt > local.updatedAt) {
+        await applyServerEntry(date, server);
+      }
+    }
+  }
+}
+
+/**
+ * Drain v1's UN-namespaced dirty set into the new namespace so offline edits
+ * made before the app update are not orphaned. Guarded on the account: the
+ * legacy DB on any device holds marina's data, so draining under any other
+ * account would leak it cross-account.
+ */
+async function drainLegacyDirty(account: string): Promise<void> {
+  if (account !== 'marina-actress') return;
+  let rawDirty: string | null = null;
+  try {
+    rawDirty = localStorage.getItem('journal:dirty'); // v1 legacy key (no ns)
+  } catch {
+    return;
+  }
+  if (rawDirty === null) return;
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(rawDirty) as Record<string, unknown>;
+  } catch {
+    parsed = {};
+  }
+  const hasLegacyDb = await Dexie.exists('journal');
+  if (hasLegacyDb) {
+    const legacy = new Dexie('journal');
+    legacy.version(1).stores({ entries: 'date, updatedAt' });
+    for (const [date, action] of Object.entries(parsed)) {
+      if (!DATE_RE.test(date)) continue;
+      if (action === 'put') {
+        const row = (await legacy.table('entries').get(date)) as
+          | { body: string; updatedAt: string }
+          | undefined;
+        if (row) {
+          // Preserve the original updatedAt (LWW correctness), then queue.
+          await dbWriteFromServer(date, { body: row.body, updatedAt: row.updatedAt });
+          markDirty(date, 'put');
+        }
+      } else if (action === 'delete') {
+        markDirty(date, 'delete');
+      }
+    }
+    legacy.close();
+  }
+  try {
+    localStorage.removeItem('journal:dirty');
+    localStorage.removeItem('journal:backoff');
+  } catch {
+    /* ignore */
+  }
+}
 
 async function ensureInitialized(): Promise<void> {
-  initState.set('ready');
+  const ns = namespace;
+  if (ns === null) return;
+  try {
+    if (localStorage.getItem(nsKey(ns, 'initialized')) === '1') {
+      initState.set('ready');
+      return;
+    }
+  } catch {
+    /* ignore — treat as uninitialized */
+  }
+
+  initState.set('initializing');
+  try {
+    const { account } = await api.health();
+    localStorage.setItem(nsKey(ns, 'account'), account);
+
+    await drainLegacyDirty(account);
+
+    const { index } = await api.listIndex();
+    const legacyDbExists = await Dexie.exists('journal');
+    if (index.length === 0 && legacyDbExists && account === 'marina-actress') {
+      // Post-migration KV eventual consistency can serve a stale-empty index
+      // for up to ~60s. An empty journal for an account with local history is
+      // NOT a valid completed init — retry later instead of presenting it.
+      throw new NetworkError('suspicious empty index for account with legacy data');
+    }
+
+    await fullPullFromIndex(index);
+    localStorage.setItem(nsKey(ns, 'initialized'), '1');
+    initState.set('ready');
+  } catch (e) {
+    // Any failure: not initialized. If we already have local data (previous
+    // partial pull), the app is usable; the overlay only blocks when empty.
+    const have = await countEntries().catch(() => 0);
+    initState.set(have > 0 ? 'ready' : 'needs-network');
+    if (!isNetworkError(e)) console.warn('[sync] init failed', e);
+  }
 }
 
 // ── Lifecycle: start/stop, called from App.svelte ───────────────────────
@@ -435,6 +547,12 @@ export function syncStart(ns: string): void {
   if (dirty.size > 0) schedulePush();
 
   pullTimer = setInterval(() => {
+    if (get(initState) !== 'ready') {
+      // First-run init hasn't completed (e.g. it failed with 'needs-network'
+      // and no local data yet) — re-attempt it. ensureInitialized() itself
+      // early-returns once the 'initialized' localStorage flag is set.
+      void ensureInitialized();
+    }
     if (
       typeof document !== 'undefined' &&
       document.visibilityState === 'visible' &&
@@ -447,6 +565,7 @@ export function syncStart(ns: string): void {
 
   if (typeof window !== 'undefined') {
     onlineListener = () => {
+      void ensureInitialized();
       void push();
       void pull(currentPullRange());
     };
