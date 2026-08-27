@@ -202,29 +202,66 @@
    * state on their own, so without this the editor would keep showing a
    * stale local copy until the next navigation.
    *
+   * `target` is the date this refresh is FOR, captured by the caller (the
+   * subscription callback below) at notification time — never read from the
+   * reactive `date` prop inside this function, since that can have moved on
+   * by the time we get here (see the post-await re-validation below).
+   *
    * Ordering matters and must NOT be reshuffled:
-   *   1. Composing — never touch the DOM mid-composition (iOS Russian
-   *      predictive input can be mid-IME-composition when the update
-   *      arrives). Defer via onNextCompositionEnd instead of swapping now.
-   *   2. Focused — the user is actively typing; their copy wins locally and
-   *      LWW resolves the divergence on the next push. Do NOT swap.
-   *   3. Otherwise safe to swap: cancel any queued save and clear
+   *   1. Composing (pre-await) — never touch the DOM mid-composition (iOS
+   *      Russian predictive input can be mid-IME-composition when the
+   *      update arrives). Defer via onNextCompositionEnd instead of
+   *      swapping now. Cheap early exit before we touch Dexie at all.
+   *   2. Focused (pre-await) — the user is actively typing; their copy wins
+   *      locally and LWW resolves the divergence on the next push. Do NOT
+   *      swap. Also a cheap early exit.
+   *   3. `await getEntry(target)` is a suspension point (IndexedDB round
+   *      trip) during which the user can type, focus, navigate to a
+   *      different date (re-keying/destroying this RichEditor instance), or
+   *      start composing — any of which invalidates the checks done in (1)
+   *      and (2). ALL FOUR preconditions are therefore re-checked after the
+   *      await, before any state is touched:
+   *        - `date !== target`      → navigated away; this resolution is
+   *                                    for a view no longer showing, so
+   *                                    touching bodyHtml/pendingSave now
+   *                                    would corrupt the NEW date's state.
+   *        - `richEditor !== ed`    → the editor instance was torn down and
+   *                                    a new one mounted (date change
+   *                                    re-keys RichEditor); `ed` is a stale
+   *                                    handle.
+   *        - `ed.isComposing()`     → composition started during the await;
+   *                                    defer again rather than clobber IME.
+   *        - `ed.isFocused()`       → user focused/typed during the await;
+   *                                    same "their copy wins" rule as (2).
+   *   4. Otherwise safe to swap: cancel any queued save and clear
    *      pendingSave BEFORE writing the new content, so a navigation
    *      immediately after can't resurrect the now-stale mirror (via the
    *      load effect's cleanup flush) over the fresh server value.
    *      setContentSilently uses `{ emitUpdate: false }`, so this produces
-   *      no onUpdate → no PUT echo back to the server.
+   *      no onUpdate → no PUT echo back to the server. saveError is cleared
+   *      alongside saveState so a stale "too long" error banner can't
+   *      outlive a valid server copy landing (saveTone/saveLabel derive
+   *      from saveError taking priority over saveState — see their comment
+   *      above).
    */
-  async function refreshFromServerCopy(): Promise<void> {
+  async function refreshFromServerCopy(target: string): Promise<void> {
     const ed = richEditor;
     if (!ed) return;
     if (ed.isComposing()) {
       // Never touch the DOM mid-composition (iOS Russian predictive input).
-      ed.onNextCompositionEnd(() => void refreshFromServerCopy());
+      ed.onNextCompositionEnd(() => void refreshFromServerCopy(target));
       return;
     }
     if (ed.isFocused()) return; // user is typing — their copy wins; next push resolves via LWW
-    const entry = await getEntry(date);
+    const entry = await getEntry(target);
+    // Re-validate everything after the await — see the doc comment above.
+    if (date !== target) return; // navigated to a different date meanwhile
+    if (richEditor !== ed) return; // editor was torn down / remounted meanwhile
+    if (ed.isComposing()) {
+      ed.onNextCompositionEnd(() => void refreshFromServerCopy(target));
+      return;
+    }
+    if (ed.isFocused()) return; // user focused/typed during the round trip
     const html = toEditorHtml(entry);
     // Clear any queued save of the now-stale mirror BEFORE swapping, so a
     // navigation right after this can't resurrect the old value with a new
@@ -234,23 +271,25 @@
     bodyHtml = html;
     ed.setContentSilently(html);
     saveState = 'saved';
+    saveError = '';
   }
 
   /**
    * Subscribes to onEntryUpdated for as long as `date` is valid, re-firing
    * (and re-subscribing) whenever `date` changes. `target` is captured at
-   * effect-setup time so a notification for a DIFFERENT date that arrives
-   * after navigation — the callback is still the old closure until Svelte
-   * reruns this effect — is compared against the date this subscription was
-   * set up for, not whatever `date` happens to be when the callback fires.
-   * The returned `off` unsubscribes on date change and on unmount alike,
-   * since Svelte effect cleanups run for both.
+   * effect-setup time and passed explicitly into refreshFromServerCopy (not
+   * read from the reactive `date` prop inside it) so a notification for a
+   * DIFFERENT date that arrives after navigation — the callback is still
+   * the old closure until Svelte reruns this effect — is compared against
+   * the date this subscription was set up for, not whatever `date` happens
+   * to be when the callback fires. The returned `off` unsubscribes on date
+   * change and on unmount alike, since Svelte effect cleanups run for both.
    */
   $effect(() => {
     if (!validInput) return;
     const target = date;
     const off = onEntryUpdated((d) => {
-      if (d === target) void refreshFromServerCopy();
+      if (d === target) void refreshFromServerCopy(target);
     });
     return off;
   });
