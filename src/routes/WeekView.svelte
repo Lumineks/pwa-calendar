@@ -6,6 +6,7 @@
   import { listEntries, type Entry } from '../data/db.ts';
   import MonthPicker from '../components/MonthPicker.svelte';
   import WeekSpread from '../components/WeekSpread.svelte';
+  import SwipePager from '../components/SwipePager.svelte';
   import OnlineIndicator from '../components/OnlineIndicator.svelte';
   import { setViewAnchor } from '../data/sync.ts';
   import { sanitizeHtml, plainToHtml } from '../data/sanitize.ts';
@@ -31,7 +32,16 @@
     validInput ? startOfISOWeek(parseISO(isoMonday)) : new Date(),
   );
   const mondayStr = $derived(format(monday, 'yyyy-MM-dd'));
-  const sundayStr = $derived(format(addDays(monday, 6), 'yyyy-MM-dd'));
+
+  // The two neighbouring weeks rendered in the pager's off-screen panels.
+  // `prevMondayStr` doubles as the lower bound of the preview query below and
+  // `nextSundayStr` (monday + 13) as its upper bound, so ONE listEntries call
+  // populates all three panels.
+  const prevMonday = $derived(addDays(monday, -7));
+  const nextMonday = $derived(addDays(monday, 7));
+  const prevMondayStr = $derived(format(prevMonday, 'yyyy-MM-dd'));
+  const nextMondayStr = $derived(format(nextMonday, 'yyyy-MM-dd'));
+  const nextSundayStr = $derived(format(addDays(monday, 13), 'yyyy-MM-dd'));
 
   const today = new Date();
 
@@ -44,11 +54,17 @@
   // Body preview HTML (already sanitized) keyed by YYYY-MM-DD. Refetched
   // whenever the visible week changes. Initial value is an empty map so the
   // layout renders even before Dexie returns.
+  //
+  // B7: the range spans THREE weeks — [monday−7, sunday+7] — because the pager
+  // renders the previous and next spreads off-screen and they must be filled
+  // before the finger reveals them. One query, not three: the neighbours are
+  // contiguous with the visible week, so a single bounded listEntries covers
+  // them and the previews map keys every day in all three panels.
   let previews = $state<Record<string, string>>({});
 
   $effect(() => {
-    const from = mondayStr;
-    const to = sundayStr;
+    const from = prevMondayStr;
+    const to = nextSundayStr;
     let cancelled = false;
     void listEntries(from, to).then((entries: Entry[]) => {
       if (cancelled) return;
@@ -100,7 +116,28 @@
       <button type="button" class="dev-exit" onclick={clearToken}>Выйти</button>
     </header>
 
-    <WeekSpread monday={monday} {previews} onOpenDay={openDay} {today} />
+    <!-- The pager needs a height to stretch its panels into; the frame supplies
+         it (the same clamp .spread uses) so all three spreads are equal-height
+         even while one of them is still empty. -->
+    <div class="pager-frame">
+      <SwipePager
+        onNavigate={(dir) => handleMonthChange(dir === -1 ? prevMondayStr : nextMondayStr)}
+      >
+        {#snippet prev()}
+          <div class="offscreen-panel" inert>
+            <WeekSpread monday={prevMonday} {previews} onOpenDay={openDay} {today} />
+          </div>
+        {/snippet}
+        {#snippet current()}
+          <WeekSpread monday={monday} {previews} onOpenDay={openDay} {today} />
+        {/snippet}
+        {#snippet next()}
+          <div class="offscreen-panel" inert>
+            <WeekSpread monday={nextMonday} {previews} onOpenDay={openDay} {today} />
+          </div>
+        {/snippet}
+      </SwipePager>
+    </div>
   </div>
 {/if}
 
@@ -118,6 +155,29 @@
     padding: 14px 0 14px;
     box-sizing: border-box;
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  /* Height frame for the swipe pager. SwipePager's .pager/.track/.panel chain
+   * is height:100% all the way down, so it needs a definite-ish box to fill.
+   * This is the same clamp WeekSpread's .spread carries (viewport minus the
+   * topbar band) — kept in both places on purpose: .spread still supplies the
+   * intrinsic height that the percentage chain resolves against, and this
+   * frame keeps the gradient background reaching the fold before any spread
+   * has rendered. */
+  .pager-frame {
+    min-height: calc(100vh - 90px);
+  }
+
+  /* Each neighbouring spread renders 7 real <button> day cards that sit
+   * off-screen until the finger reveals them. Without `inert` they stay in the
+   * tab order and the accessibility tree, so a keyboard user would walk 21 day
+   * buttons instead of 7 and a screen reader would announce three weeks at
+   * once. `display: contents` keeps the wrapper out of the layout tree
+   * entirely, so .spread stays a direct layout child of SwipePager's .panel
+   * and the height chain is unchanged; `inert` is a behavioural attribute and
+   * applies to the subtree regardless of display. */
+  .offscreen-panel {
+    display: contents;
   }
 
   .topbar {

@@ -1,14 +1,12 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { navigate } from 'svelte-routing';
-  import { fly } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
   import {
     parseISO,
     isValid,
     format,
+    addDays,
     startOfISOWeek,
-    getISODay,
   } from 'date-fns';
   import { ru } from 'date-fns/locale';
   import { getEntry, putEntry, type Entry } from '../data/db.ts';
@@ -18,6 +16,7 @@
   import { PALETTE } from '../data/palette.ts';
   import { MAX_BODY_BYTES, utf8ByteLength } from '../data/limits.ts';
   import type RichEditor from '../components/RichEditor.svelte';
+  import SwipePager from '../components/SwipePager.svelte';
   import { base } from '../lib/base.ts';
 
   /**
@@ -83,13 +82,88 @@
     return formatted.charAt(0).toUpperCase() + formatted.slice(1);
   });
 
+  // ---- Swipe neighbours (B7) ----
+
+  const prevDateStr = $derived(format(addDays(parsed, -1), 'yyyy-MM-dd'));
+  const nextDateStr = $derived(format(addDays(parsed, 1), 'yyyy-MM-dd'));
+
   /**
-   * Transition direction inferred from the day-of-week's column in WeekView:
-   *   Mon/Tue/Wed (ISO day 1-3, left page)   → fly in from x:-40
-   *   Thu/Fri/Sat/Sun (ISO day 4-7, right)   → fly in from x:+40
-   * This approximates "tab expands to full page" without a true FLIP morph.
+   * Sanitized preview HTML for the two neighbouring days, keyed by date.
+   *
+   * These panels are deliberately STATIC paper, not editors: mounting two more
+   * tiptap instances per navigation would triple the editor teardown/rebuild
+   * cost on every swipe, and only one of them can ever be focused. The strings
+   * come from `toEditorHtml`, which sanitizes (or escapes, for legacy plain
+   * rows), so they are safe for the `{@html}` sink in the template.
    */
-  const flyX = $derived(validInput && getISODay(parsed) <= 3 ? -40 : 40);
+  let neighborHtml = $state<Record<string, string>>({});
+
+  $effect(() => {
+    if (!validInput) return;
+    let cancelled = false;
+    void Promise.all([getEntry(prevDateStr), getEntry(nextDateStr)]).then(
+      ([p, n]: [Entry | undefined, Entry | undefined]) => {
+        if (cancelled) return;
+        neighborHtml = {
+          [prevDateStr]: toEditorHtml(p),
+          [nextDateStr]: toEditorHtml(n),
+        };
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  /**
+   * Runs once per swipe gesture, at the moment SwipePager locks horizontal —
+   * before the finger-follow animation starts.
+   *
+   * The editor must lose focus BEFORE the panel animates: dismissing the iOS
+   * software keyboard while a transform animation is in flight triggers the
+   * standalone-PWA `visualViewport.offsetTop` bug (the page ends up scrolled
+   * under the status bar with no way back). So we blur, then wait for the
+   * visual viewport to stop resizing: 120ms of quiet after the last `resize`,
+   * with a 400ms cap that covers the case where no `resize` ever arrives (no
+   * keyboard was actually up, or a browser that doesn't fire it) so the
+   * gesture can never stall waiting on an event that isn't coming.
+   *
+   * Fire-and-forget from SwipePager's side — the finger keeps tracking while
+   * this runs; it only has to have happened before the settle animation.
+   */
+  async function settleKeyboard(): Promise<void> {
+    if (!richEditor?.isFocused()) return;
+    richEditor.blurEditor();
+    // Wait for the visual viewport to settle after keyboard dismissal —
+    // animating concurrently triggers the iOS standalone offsetTop bug.
+    await new Promise<void>((resolve) => {
+      const vv = window.visualViewport;
+      if (!vv) {
+        setTimeout(resolve, 120);
+        return;
+      }
+      let timer = setTimeout(finish, 400); // hard cap
+      function finish(): void {
+        vv?.removeEventListener('resize', onResize);
+        resolve();
+      }
+      function onResize(): void {
+        clearTimeout(timer);
+        timer = setTimeout(finish, 120);
+      }
+      vv.addEventListener('resize', onResize);
+    });
+  }
+
+  /**
+   * Commit a swipe. This is a plain history PUSH through the same route the
+   * WeekSpread tabs use, so the flush-on-date-change invariant is untouched:
+   * the new `date` prop reruns the load effect, whose cleanup persists any
+   * pending edit for the OLD date before the new one loads.
+   */
+  function swipeDay(dir: -1 | 1): void {
+    navigate(`${base}/day/${dir === -1 ? prevDateStr : nextDateStr}`);
+  }
 
   // ---- Editor state ----
 
@@ -347,75 +421,119 @@
 </script>
 
 {#if validInput}
-  <div
-    class="day-view"
-    transition:fly={{ x: flyX, duration: 220, easing: quintOut }}
-  >
-    <header class="header">
-      <button type="button" class="back" onclick={goBack} aria-label="Назад">
-        <span aria-hidden="true">←</span>
-        <span>Назад</span>
-      </button>
-      <h1 class="date" lang="ru">{russianDate}</h1>
-      <span
-        class={['save-indicator', `state-${saveTone}`]}
-        aria-live="polite"
-        role="status"
-      >
-        {saveLabel}
-      </span>
-    </header>
+  <!-- The pager owns the navigation animation now (v1's transition:fly is
+       gone): the neighbour panels are real, finger-following paper, and
+       committing the gesture navigates. -->
+  <SwipePager onNavigate={swipeDay} onBeforeSettle={settleKeyboard}>
+    {#snippet prev()}
+      <div class="day-view day-static" aria-hidden="true">
+        <div class="paper static-paper">{@html neighborHtml[prevDateStr] ?? ''}</div>
+      </div>
+    {/snippet}
 
-    <div class="palette" role="toolbar" aria-label="Цвет текста">
-      {#each PALETTE as pen (pen.id)}
-        <!-- `pointerup` is the pointer path (see .palette in <style>). Enter
-             and Space synthesize `click`, which nothing here handles, so the
-             keyboard path is wired explicitly rather than by re-adding
-             `onclick`. -->
-        <button
-          type="button"
-          class={['pen', activePen === pen.css && 'is-active']}
-          style={`--pen: ${pen.css}`}
-          aria-label={pen.label}
-          aria-pressed={activePen === pen.css}
-          onpointerup={() => pickPen(pen.css)}
-          onkeydown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              pickPen(pen.css);
-            }
-          }}
-        ></button>
-      {/each}
-    </div>
+    {#snippet current()}
+      <div class="day-view">
+        <header class="header">
+          <button type="button" class="back" onclick={goBack} aria-label="Назад">
+            <span aria-hidden="true">←</span>
+            <span>Назад</span>
+          </button>
+          <h1 class="date" lang="ru">{russianDate}</h1>
+          <span
+            class={['save-indicator', `state-${saveTone}`]}
+            aria-live="polite"
+            role="status"
+          >
+            {saveLabel}
+          </span>
+        </header>
 
-    <div class="paper editor-pane">
-      {#if initialHtml !== null}
-        {#key date}
-          {#await import('../components/RichEditor.svelte') then mod}
-            <mod.default
-              bind:this={richEditor}
-              initialHtml={initialHtml}
-              onUpdate={handleEditorUpdate}
-            />
-          {/await}
-        {/key}
-      {/if}
-    </div>
-  </div>
+        <div class="palette" role="toolbar" aria-label="Цвет текста">
+          {#each PALETTE as pen (pen.id)}
+            <!-- `pointerup` is the pointer path (see .palette in <style>). Enter
+                 and Space synthesize `click`, which nothing here handles, so the
+                 keyboard path is wired explicitly rather than by re-adding
+                 `onclick`. -->
+            <button
+              type="button"
+              class={['pen', activePen === pen.css && 'is-active']}
+              style={`--pen: ${pen.css}`}
+              aria-label={pen.label}
+              aria-pressed={activePen === pen.css}
+              onpointerup={() => pickPen(pen.css)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  pickPen(pen.css);
+                }
+              }}
+            ></button>
+          {/each}
+        </div>
+
+        <div class="paper editor-pane">
+          {#if initialHtml !== null}
+            {#key date}
+              {#await import('../components/RichEditor.svelte') then mod}
+                <mod.default
+                  bind:this={richEditor}
+                  initialHtml={initialHtml}
+                  onUpdate={handleEditorUpdate}
+                />
+              {/await}
+            {/key}
+          {/if}
+        </div>
+      </div>
+    {/snippet}
+
+    {#snippet next()}
+      <div class="day-view day-static" aria-hidden="true">
+        <div class="paper static-paper">{@html neighborHtml[nextDateStr] ?? ''}</div>
+      </div>
+    {/snippet}
+  </SwipePager>
 {/if}
 
 <style>
-  /* Root fills the viewport so the textarea below can grow to fill the
-   * remaining height. flex column = header band + flexible editor pane. */
+  /* Root fills the viewport so the editor below can grow to fill the
+   * remaining height. flex column = header band + flexible editor pane.
+   *
+   * B7 (audit E1): `position: fixed; inset: 0` is GONE. A fixed root cannot
+   * live inside the pager — the pager's animating `transform` on .track makes
+   * itself the containing block for fixed descendants, so all three panels
+   * would stack on top of each other at the viewport origin. `100dvh` on a
+   * normal flow column gives the same "fills the screen, header pinned at the
+   * top" result while letting the panel be laid out side by side, and it
+   * tracks the dynamic viewport as mobile browser chrome collapses (audit
+   * MUST 26: the header must not rely on fixed positioning or `100vh`). */
   .day-view {
-    position: fixed;
-    inset: 0;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     background: var(--paper-fill, #fbf6e9);
-    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
     color: #2c2412;
+  }
+
+  /* Neighbour panels: a plain sheet of ruled paper showing the day's text, no
+   * header, no palette, no editor. Non-interactive — touches on them belong to
+   * the pager gesture, never to the (off-screen) content. */
+  .day-static {
+    pointer-events: none;
+  }
+
+  .static-paper {
+    flex: 1 1 auto;
+    padding: 48px 18px 0;
+    font-size: 16px;
+    line-height: var(--paper-line-height);
+    overflow: hidden;
+  }
+
+  .static-paper :global(p) {
+    margin: 0;
+    line-height: var(--paper-line-height);
   }
 
   /* Header band: three-column grid keeps the date perfectly centered even
