@@ -100,11 +100,29 @@
 
   $effect(() => {
     if (!validInput) return;
+    const target = date;
     let cancelled = false;
     void Promise.all([getEntry(prevDateStr), getEntry(nextDateStr)]).then(
       ([p, n]: [Entry | undefined, Entry | undefined]) => {
         if (cancelled) return;
+        // MERGE, don't replace. `neighborHtml[target]` — the CURRENT date's
+        // html, written by the PREVIOUS run of this effect (the day we just
+        // swiped onto was that run's prev or next) — is what `.editor-pane`
+        // paints while the editor is mounting. Replacing the map wholesale
+        // here would drop that key mid-gap and reintroduce the blank flash
+        // this merge exists to close; it would also blank BOTH neighbour
+        // panels on every navigation until the new reads land.
+        //
+        // Bounded to exactly three keys (prev / current / next) so a long
+        // session of swiping can't grow the map without end.
+        //
+        // Reading `neighborHtml` here does NOT make it a dependency of this
+        // effect: Svelte tracks reads that happen during the effect's
+        // synchronous run, and this callback runs later, outside that
+        // tracking context. So there is no write → rerun → refetch loop.
+        const carried = neighborHtml[target];
         neighborHtml = {
+          ...(carried !== undefined ? { [target]: carried } : {}),
           [prevDateStr]: toEditorHtml(p),
           [nextDateStr]: toEditorHtml(n),
         };
@@ -482,6 +500,16 @@
                 />
               {/await}
             {/key}
+          {:else}
+            <!-- Editor not mounted yet (initialHtml is nulled synchronously on
+                 every date change, and the lazy chunk + Dexie read both have to
+                 land before it comes back). Paint the day's text meanwhile, so a
+                 committed swipe doesn't animate the incoming day in and then
+                 blank it. Display only — this NEVER feeds bodyHtml, so it cannot
+                 reach a save. -->
+            <div class="editor-placeholder" lang="ru">
+              {@html neighborHtml[date] ?? ''}
+            </div>
           {/if}
         </div>
       </div>
@@ -534,6 +562,28 @@
   .static-paper :global(p) {
     margin: 0;
     line-height: var(--paper-line-height);
+  }
+
+  /* Stand-in for the editor surface during the mount gap. Every value here is
+   * copied from RichEditor's .rich-editor-content (padding, font stack, 16px
+   * floor, line-height, colour) so the text does not shift by a pixel when the
+   * real editor replaces it — the swap should be invisible. .editor-pane
+   * already draws the ruled lines, so this must NOT carry .paper as well. */
+  .editor-placeholder {
+    flex: 1 1 auto;
+    width: 100%;
+    overflow: hidden;
+    padding: var(--editor-pad-top, 2px) 18px 24px 18px;
+    font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px;
+    line-height: var(--paper-line-height);
+    color: #2c2412;
+  }
+
+  .editor-placeholder :global(p) {
+    margin: 0;
+    line-height: var(--paper-line-height);
+    min-height: var(--paper-line-height);
   }
 
   /* Header band: three-column grid keeps the date perfectly centered even
