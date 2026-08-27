@@ -27,8 +27,24 @@
   let startT = 0;
   let settled = true;
 
+  // Holds the pending post-animation setTimeout id so it can be cleared if a
+  // new gesture arms a fresh animation before the old one fires, or if the
+  // component unmounts mid-animation (stale closure must not fire onNavigate
+  // on behalf of a dead pager).
+  let animTimer: ReturnType<typeof setTimeout> | undefined;
+
   function width(): number {
     return viewport?.clientWidth ?? window.innerWidth;
+  }
+
+  function armAnimation(after: () => void): void {
+    if (animTimer !== undefined) {
+      clearTimeout(animTimer);
+    }
+    animTimer = setTimeout(() => {
+      animTimer = undefined;
+      after();
+    }, 220); // matches the CSS transition duration
   }
 
   async function onTouchStart(e: TouchEvent): Promise<void> {
@@ -90,16 +106,27 @@
     animating = true;
     if (commit) {
       offset = dx > 0 ? width() : -width();
-      const done = (): void => {
+      armAnimation(() => {
         animating = false;
         offset = 0;
         onNavigate(dir);
-      };
-      setTimeout(done, 220); // matches the CSS transition duration
+      });
     } else {
       offset = 0;
-      setTimeout(() => { animating = false; }, 220);
+      armAnimation(() => { animating = false; });
     }
+  }
+
+  // touchcancel means the OS/browser reclaimed the touch stream (incoming
+  // call, control-center swipe, etc.) — the gesture MUST abort without ever
+  // evaluating the commit condition, unlike touchend. Always snap back to 0.
+  function onTouchCancel(): void {
+    if (!tracking) return;
+    tracking = false;
+    locked = null;
+    animating = true;
+    offset = 0;
+    armAnimation(() => { animating = false; });
   }
 
   // Svelte 5's inline ontouch* attributes cannot guarantee {passive:false} —
@@ -111,15 +138,20 @@
     const ts = (e: TouchEvent) => void onTouchStart(e);
     const tm = (e: TouchEvent) => onTouchMove(e);
     const te = (e: TouchEvent) => onTouchEnd(e);
+    const tc = () => onTouchCancel();
     el.addEventListener('touchstart', ts, { passive: false });
     el.addEventListener('touchmove', tm, { passive: false });
     el.addEventListener('touchend', te);
-    el.addEventListener('touchcancel', te);
+    el.addEventListener('touchcancel', tc);
     return () => {
       el.removeEventListener('touchstart', ts);
       el.removeEventListener('touchmove', tm);
       el.removeEventListener('touchend', te);
-      el.removeEventListener('touchcancel', te);
+      el.removeEventListener('touchcancel', tc);
+      if (animTimer !== undefined) {
+        clearTimeout(animTimer);
+        animTimer = undefined;
+      }
     };
   });
 </script>
