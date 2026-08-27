@@ -2200,7 +2200,7 @@ git commit -m "feat(week): WeekSpread extraction, sanitized HTML previews, heigh
   - Behavior: 3-panel track; follows the finger; on release navigates when |dx| > 35% width OR velocity > 0.5 px/ms; `onNavigate` fires AFTER the slide-out animation completes; `onBeforeSettle` (if provided) is awaited at gesture START (used by DayView to blur + let the viewport settle). Panels without a `prev`/`next` snippet rubber-band (no navigation in that direction).
   - Gesture rules: `touchstart` registered `{ passive: false }`; `preventDefault()` on touchstart only when the touch begins within 28px of either screen edge (suppresses the system back/forward gesture); horizontal lock when `|dx| > 8 && |dx| > 1.7 * |dy|`, after which `touchmove` calls `preventDefault()`; before the lock, vertical scrolling proceeds untouched.
 
-- [ ] **Step 1: `src/lib/base.ts`**
+- [x] **Step 1: `src/lib/base.ts`**
 
 ```ts
 /**
@@ -2213,7 +2213,7 @@ export const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 Update `App.svelte`, `WeekView.svelte`, `DayView.svelte` to `import { base } from '../lib/base.ts';` (path adjusted per file) and delete their local `const base = ...` lines.
 
-- [ ] **Step 2: `src/components/SwipePager.svelte`**
+- [x] **Step 2: `src/components/SwipePager.svelte`**
 
 ```svelte
 <script lang="ts">
@@ -2386,7 +2386,7 @@ Svelte NOTE: `ontouchstart`/`ontouchmove` attributes in Svelte 5 are passive by 
 
 Use the `$effect` form and DELETE the inline `ontouch*` attributes — this is the required implementation, the inline form above is illustrative only.
 
-- [ ] **Step 3: Verify** — `npm run check`; commit.
+- [x] **Step 3: Verify** — `npm run check`; commit.
 
 ```bash
 git add src/lib/base.ts src/components/SwipePager.svelte src/App.svelte src/routes/WeekView.svelte src/routes/DayView.svelte
