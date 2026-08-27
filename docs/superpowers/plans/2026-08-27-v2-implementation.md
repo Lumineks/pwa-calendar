@@ -2010,7 +2010,7 @@ git commit -m "feat(editor): tiptap color editor in DayView — palette, byte li
 **Interfaces:**
 - Consumes: `onEntryUpdated` (A7 — fires from BOTH `pull()` and the 409 push path via `applyServerEntry`), `RichEditor.isComposing/isFocused/setContentSilently/onNextCompositionEnd` (B3).
 
-- [ ] **Step 1: Add the subscription effect to DayView**
+- [x] **Step 1: Add the subscription effect to DayView**
 
 ```svelte
   import { onEntryUpdated } from '../data/sync.ts';
@@ -2046,11 +2046,11 @@ git commit -m "feat(editor): tiptap color editor in DayView — palette, byte li
   });
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 Dev smoke (two clients on the test account — browser + curl): open day X in the app, leave editor UNfocused; `curl -X PUT .../entries/<X>` with a newer `updatedAt` and different body via the dev worker; wait for the next pull (or fire `window.dispatchEvent(new Event('online'))`) → editor content swaps, no PUT echo in the network tab (setContent is silent). Then repeat with the editor focused → content does NOT swap.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/routes/DayView.svelte
