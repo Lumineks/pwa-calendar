@@ -46,6 +46,7 @@ import {
   dbDeleteFromServer,
   getEntry as dbGetEntry,
   dbWriteFromServer,
+  type Entry,
 } from './db.ts';
 import { nsKey } from './namespace.ts';
 
@@ -58,7 +59,11 @@ const PULL_INTERVAL_MS = 3 * 60_000;
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 5 * 60_000;
 const PULL_CHUNK = 40; // worker does 1 KV subrequest per date; free-plan cap is 50/invocation
-const EMPTY_INDEX_SUSPECT_WINDOW_MS = 90_000; // bound on the suspicious-empty-index retry (see F3)
+// Bound on the suspicious-empty-index retry. MUST stay comfortably above
+// PULL_INTERVAL_MS: the only thing that retries this path is the 3-min tick,
+// so at 90s the window had already expired by the time retry #1 arrived and
+// the guard effectively fired once. 400s gives at least two real retries.
+const EMPTY_INDEX_SUSPECT_WINDOW_MS = 400_000;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -226,101 +231,131 @@ async function push(): Promise<void> {
   // or persisting it would cross the account boundary.
   const myRun = runToken;
 
-  // Snapshot the dirty set at the start of this run. Edits that arrive while
-  // we're pushing add to `dirty` and will be picked up by the NEXT push (a
-  // fresh schedulePush is triggered by their own markDirty call).
-  const snapshot: Array<[string, Action]> = [...dirty.entries()];
-  const networkFailures: string[] = [];
+  try {
+    // Snapshot the dirty set at the start of this run. Edits that arrive while
+    // we're pushing add to `dirty` and will be picked up by the NEXT push (a
+    // fresh schedulePush is triggered by their own markDirty call).
+    const snapshot: Array<[string, Action]> = [...dirty.entries()];
+    const networkFailures: string[] = [];
 
-  for (const [date, action] of snapshot) {
-    if (myRun !== runToken) return;
-    // The action could have changed (e.g. put then delete) between snapshot
-    // and now. Use the current value, not the snapshot.
-    const currentAction = dirty.get(date);
-    if (currentAction === undefined) continue;
-
-    if (currentAction === 'put') {
-      const local = await dbGetEntry(date);
+    for (const [date, action] of snapshot) {
       if (myRun !== runToken) return;
-      if (!local) {
-        // Local row vanished between markDirty and now (probably a delete
-        // race). Drop from dirty without contacting the server; the matching
-        // delete will be in the dirty set with a 'delete' action.
-        dirty.delete(date);
-        continue;
-      }
-      try {
-        const result = await api.putEntry(
-          date,
-          local.body,
-          local.updatedAt,
-          local.format,
-        );
-        if (myRun !== runToken) return;
-        if ('conflict' in result) {
-          // Server has strictly-newer copy. LWW: take the server's version,
-          // overwrite Dexie WITHOUT marking dirty (else infinite loop).
-          await applyServerEntry(date, result.server);
+      // The action could have changed (e.g. put then delete) between snapshot
+      // and now. Use the current value, not the snapshot.
+      const currentAction = dirty.get(date);
+      if (currentAction === undefined) continue;
+
+      if (currentAction === 'put') {
+        // The Dexie read is INSIDE the try (it used to sit outside every
+        // try/catch in this function): a rejected read propagated out of
+        // push() entirely, so `pushInFlight` was never cleared and every
+        // later push early-returned — sync stopped, silently, until reload.
+        // A local read failure is transient and says nothing about the
+        // server's verdict on this entry, so it takes the RETRY path
+        // (networkFailures → backoff), never the poison-pill drop.
+        let local: Entry | undefined;
+        try {
+          local = await dbGetEntry(date);
+        } catch (e) {
           if (myRun !== runToken) return;
-        }
-        dirty.delete(date);
-      } catch (e) {
-        if (myRun !== runToken) return;
-        if (isNetworkError(e) || (isApiError(e) && e.status === 401)) {
-          // 401 during logout/token-swap races must NOT poison-pill the
-          // entry (Audit-2 S8) — the write is retried under the right token.
+          console.warn('[sync] db read failed, will retry', date, e);
           networkFailures.push(date);
-        } else {
-          // Poison pill — 4xx (other than 409/401), 5xx, malformed JSON, etc.
-          // Drop so we don't spin forever. The local copy stays in Dexie.
-          console.warn('[sync] drop put', date, e);
-          dirty.delete(date);
+          continue;
         }
-      }
-    } else {
-      try {
-        await api.deleteEntry(date);
         if (myRun !== runToken) return;
-        dirty.delete(date);
-      } catch (e) {
-        if (myRun !== runToken) return;
-        if (isNetworkError(e) || (isApiError(e) && e.status === 401)) {
-          // Same 401 rule as the put branch above.
-          networkFailures.push(date);
-        } else {
-          console.warn('[sync] drop delete', date, e);
+        if (!local) {
+          // Local row vanished between markDirty and now (probably a delete
+          // race). Drop from dirty without contacting the server; the matching
+          // delete will be in the dirty set with a 'delete' action.
           dirty.delete(date);
+          continue;
+        }
+        try {
+          const result = await api.putEntry(
+            date,
+            local.body,
+            local.updatedAt,
+            local.format,
+          );
+          if (myRun !== runToken) return;
+          if ('conflict' in result) {
+            // Server has strictly-newer copy. LWW: take the server's version,
+            // overwrite Dexie WITHOUT marking dirty (else infinite loop).
+            await applyServerEntry(date, result.server);
+            if (myRun !== runToken) return;
+          }
+          dirty.delete(date);
+        } catch (e) {
+          if (myRun !== runToken) return;
+          if (isNetworkError(e) || (isApiError(e) && e.status === 401)) {
+            // 401 during logout/token-swap races must NOT poison-pill the
+            // entry (Audit-2 S8) — the write is retried under the right token.
+            networkFailures.push(date);
+          } else {
+            // Poison pill — 4xx (other than 409/401), 5xx, malformed JSON, etc.
+            // Drop so we don't spin forever. The local copy stays in Dexie.
+            console.warn('[sync] drop put', date, e);
+            dirty.delete(date);
+          }
+        }
+      } else {
+        try {
+          await api.deleteEntry(date);
+          if (myRun !== runToken) return;
+          dirty.delete(date);
+        } catch (e) {
+          if (myRun !== runToken) return;
+          if (isNetworkError(e) || (isApiError(e) && e.status === 401)) {
+            // Same 401 rule as the put branch above.
+            networkFailures.push(date);
+          } else {
+            console.warn('[sync] drop delete', date, e);
+            dirty.delete(date);
+          }
         }
       }
     }
-  }
 
-  if (myRun !== runToken) return;
+    if (myRun !== runToken) return;
 
-  persistDirty();
-
-  if (networkFailures.length > 0) {
-    backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
     persistDirty();
-    // Schedule next retry; bypass the 3s debounce, use backoff directly.
-    // We mark pushScheduled true so concurrent markDirty calls don't try to
-    // schedule a duplicate fast retry.
-    pushScheduled = true;
-    if (scheduledTimer !== undefined) clearTimeout(scheduledTimer);
-    scheduledTimer = setTimeout(() => {
-      pushScheduled = false;
-      scheduledTimer = undefined;
-      void push();
-    }, backoffMs);
-  } else {
-    backoffMs = BACKOFF_INITIAL_MS;
-    persistDirty();
-  }
 
-  pushInFlight = false;
-  // If new dirty entries arrived during the push (markDirty's
-  // schedulePush bailed because pushInFlight was true), re-arm now.
-  if (dirty.size > 0) schedulePush(0);
+    if (networkFailures.length > 0) {
+      backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
+      persistDirty();
+      // Schedule next retry; bypass the 3s debounce, use backoff directly.
+      // We mark pushScheduled true so concurrent markDirty calls don't try to
+      // schedule a duplicate fast retry.
+      pushScheduled = true;
+      if (scheduledTimer !== undefined) clearTimeout(scheduledTimer);
+      scheduledTimer = setTimeout(() => {
+        pushScheduled = false;
+        scheduledTimer = undefined;
+        void push();
+      }, backoffMs);
+    } else {
+      backoffMs = BACKOFF_INITIAL_MS;
+      persistDirty();
+    }
+
+    // Cleared here, BEFORE the re-arm below, and not left to the `finally`:
+    // schedulePush() itself early-returns while pushInFlight is true, so the
+    // re-arm would be a no-op if the flag were still set. The `finally` is
+    // the safety net for the throwing paths, and re-clearing there is a
+    // harmless idempotent write.
+    pushInFlight = false;
+    // If new dirty entries arrived during the push (markDirty's
+    // schedulePush bailed because pushInFlight was true), re-arm now.
+    if (dirty.size > 0) schedulePush(0);
+  } finally {
+    // Guarded by myRun — an UNGUARDED clear here would be a correctness bug,
+    // not just belt-and-braces: an aborted run (syncStop / namespace change
+    // bumped runToken, and syncStop already cleared the flag itself) resumes
+    // at its next checkpoint and returns THROUGH this finally, at which point
+    // a newer push may already be in flight under the new runToken — clearing
+    // then would let a third push run concurrently over the same dirty set.
+    if (myRun === runToken) pushInFlight = false;
+  }
 }
 
 // ── Pull ────────────────────────────────────────────────────────────────
@@ -571,7 +606,25 @@ async function ensureInitializedRun(): Promise<void> {
     /* ignore — treat as uninitialized */
   }
 
-  initState.set('initializing');
+  // Only take over the whole screen when there is nothing to show. This run
+  // is re-entered by the 3-min tick and by every 'online' event, which fire
+  // while the user may be mid-edit in DayView; 'initializing' swaps the
+  // Router out for App.svelte's full-screen init overlay, destroying the
+  // mounted DayView (and its unsaved-but-pending editor state) under them.
+  // With local entries present the app is already usable, so the re-init runs
+  // INVISIBLY: state stays whatever it was ('ready', or 'idle' on a cold
+  // start — both render the Router). countEntries() cannot throw here (the
+  // .catch keeps the pre-existing "treat as empty" behaviour), so this await
+  // is safe outside the try; the runToken re-check after it keeps the
+  // checkpoint discipline of every other await in this function.
+  const localCount = await countEntries().catch(() => 0);
+  if (myRun !== runToken) return;
+  if (localCount === 0) initState.set('initializing');
+
+  // Set when we accept a suspicious-but-expired empty index (see below):
+  // the run completes and the app goes 'ready', but the 'initialized' flag is
+  // deliberately NOT stamped.
+  let acceptedSuspectEmptyIndex = false;
   try {
     const { account } = await api.health();
     if (myRun !== runToken) return;
@@ -596,6 +649,8 @@ async function ensureInitializedRun(): Promise<void> {
         console.warn('[sync] suspicious empty index — retrying');
         throw new NetworkError('suspicious empty index for account with legacy data');
       }
+      // Window elapsed: stop blocking, but stay un-initialized (below).
+      acceptedSuspectEmptyIndex = true;
     }
 
     await fullPullFromIndex(index, myRun);
@@ -605,7 +660,19 @@ async function ensureInitializedRun(): Promise<void> {
     await drainLegacyDirty(account, myRun);
     if (myRun !== runToken) return;
 
-    localStorage.setItem(nsKey(ns, 'initialized'), '1');
+    if (!acceptedSuspectEmptyIndex) {
+      localStorage.setItem(nsKey(ns, 'initialized'), '1');
+    }
+    // Else: we accepted an empty index for an account that has legacy data,
+    // only because the suspicion window elapsed — that is a "probably fine,
+    // can't prove it" verdict, not a completed first-run pull. Stamping
+    // 'initialized' would make ensureInitializedRun() early-return forever,
+    // so a KV index that recovers later would never be pulled. Leaving the
+    // flag unset costs one cheap re-run per launch/'online' event and lets a
+    // later attempt succeed for real. It does NOT loop the overlay: this run
+    // still ends 'ready' (so the 3-min tick's `!== 'ready'` guard skips it),
+    // and any later re-entry that finds local entries takes the F4 path above
+    // and never sets 'initializing'.
     initState.set('ready');
   } catch (e) {
     if (myRun !== runToken) return;

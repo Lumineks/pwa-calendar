@@ -39,7 +39,7 @@
     "@tiptap/pm": "3.30.5",
     "date-fns": "^4.1.0",
     "dexie": "^4.4.2",
-    "dompurify": "^3.4.14",
+    "dompurify": "3.4.14",
     "svelte-routing": "^2.13.0"
   }
 }

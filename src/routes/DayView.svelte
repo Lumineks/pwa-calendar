@@ -301,6 +301,12 @@
    * by the time we get here (see the post-await re-validation below).
    *
    * Ordering matters and must NOT be reshuffled:
+   *   0. No editor mounted (the {#await} mount gap) — handled first and
+   *      separately: there is no ProseMirror doc to protect, so the
+   *      composing/focused rules do not apply; we re-read Dexie and seed
+   *      `initialHtml`/`bodyHtml` so the editor MOUNTS on the server copy.
+   *      See the inline comment in that branch for why dropping the
+   *      notification here loses the remote edit.
    *   1. Composing (pre-await) — never touch the DOM mid-composition (iOS
    *      Russian predictive input can be mid-IME-composition when the
    *      update arrives). Defer via onNextCompositionEnd instead of
@@ -339,7 +345,39 @@
    */
   async function refreshFromServerCopy(target: string): Promise<void> {
     const ed = richEditor;
-    if (!ed) return;
+    if (!ed) {
+      // MOUNT GAP. The subscription is live for the whole {#await} window
+      // (lazy RichEditor chunk + Dexie read), so a pull landing here used to
+      // be dropped on the floor: nothing re-notifies afterwards (the sync
+      // layer's LWW check is already false — Dexie holds the server copy),
+      // the editor then mounted from the PRE-write `initialHtml`, and the
+      // first keystroke saved that stale document over the other device's
+      // edit with a newer updatedAt. So instead of returning, seed the
+      // not-yet-mounted editor from the server copy.
+      if (date !== target) return; // notification for a date we left
+      const gapEntry = await getEntry(target);
+      // Re-check BOTH preconditions after the await, in this order: the route
+      // may have moved on, and the editor may have finished mounting while we
+      // were in IndexedDB (in which case `initialHtml` is already applied and
+      // the normal path — with its composing/focused rules — is the correct
+      // and only safe way to swap content).
+      if (date !== target) return;
+      if (richEditor) {
+        void refreshFromServerCopy(target); // editor appeared: normal path
+        return;
+      }
+      const gapHtml = toEditorHtml(gapEntry);
+      // Same pre-swap cleanup as the mounted path below: drop any queued save
+      // of the now-stale mirror before replacing it, so the load effect's
+      // cleanup flush can't resurrect it with a fresh updatedAt.
+      save.cancel();
+      pendingSave = false;
+      bodyHtml = gapHtml;
+      initialHtml = gapHtml; // editor will mount on the server copy
+      saveState = 'saved';
+      saveError = '';
+      return;
+    }
     if (ed.isComposing()) {
       // Never touch the DOM mid-composition (iOS Russian predictive input).
       ed.onNextCompositionEnd(() => void refreshFromServerCopy(target));
