@@ -69,6 +69,22 @@ export default defineConfig(({ mode }) => {
         },
         devOptions: { enabled: false },
       }),
+      {
+        // Ensures the configured VITE_WORKER_URL origin is allowed by the
+        // static CSP in index.html, so LAN/device testing against a
+        // non-default worker URL (e.g. http://192.168.0.58:8787) isn't
+        // blocked by connect-src. The prod URL and localhost:8787 stay
+        // hardcoded in index.html as safe defaults; this only appends the
+        // configured origin when it isn't already listed.
+        name: 'inject-worker-origin-csp',
+        transformIndexHtml(html: string): string {
+          if (!workerOrigin || html.includes(workerOrigin)) return html
+          return html.replace(
+            /(connect-src[^;]+)/,
+            (match) => `${match} ${workerOrigin}`
+          )
+        },
+      },
     ],
   }
 })
