@@ -153,13 +153,25 @@ export function onEntryUpdated(cb: (date: string) => void): () => void {
  * The ONLY path from a server value into Dexie. Wraps db.ts's back door so
  * every server write — from pull() and from push()'s 409 branch alike —
  * notifies the listener registry exactly once.
+ *
+ * Listener exceptions are isolated: an unguarded throw here would escape into
+ * pull()'s catch (silently skipping every remaining date in the 7-week range)
+ * and, from push()'s 409 branch, into the per-entry catch — where it is
+ * neither NetworkError nor 401 and would take the poison-pill path, dropping
+ * the date from the dirty set over a subscriber bug.
  */
 async function applyServerEntry(
   date: string,
   value: { body: string; updatedAt: string; format?: 'html' },
 ): Promise<void> {
   await dbWriteFromServer(date, value);
-  for (const cb of entryListeners) cb(date);
+  for (const cb of entryListeners) {
+    try {
+      cb(date);
+    } catch (e) {
+      console.warn('[sync] entry listener threw', date, e);
+    }
+  }
 }
 
 // ── Public: markDirty ───────────────────────────────────────────────────
