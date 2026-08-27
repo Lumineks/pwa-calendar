@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { token } from './state/auth.ts';
+  import { token, clearToken } from './state/auth.ts';
   import { Router, Route, navigate } from 'svelte-routing';
   import { parseISO, isValid, startOfISOWeek, format } from 'date-fns';
   import TokenGate from './routes/TokenGate.svelte';
@@ -76,6 +76,9 @@
         ? 'Первый запуск: журнал загружается с сервера.'
         : 'Для первой загрузки журнала подключитесь к сети — записи появятся автоматически.'}
     </p>
+    {#if $initState === 'needs-network'}
+      <button type="button" class="init-logout" onclick={clearToken}>Выйти</button>
+    {/if}
   </div>
 {:else}
   <Router basepath={base}>
@@ -104,4 +107,16 @@
   }
   .init-title { font-size: 17px; font-weight: 700; }
   .init-hint { font-size: 14px; color: #5a4a26; max-width: 320px; }
+  .init-logout {
+    margin-top: 8px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(70, 60, 35, 0.18);
+    background: #fbf6e9;
+    color: #2c2412;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .init-logout:hover { background: #f3ecd8; }
 </style>
